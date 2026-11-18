@@ -84,6 +84,9 @@ const spec = () => {
   return {
     start: at(0, 1), second: at(1, 1), third: at(2, 2), mid: [at(3, 3), at(4, 3), at(5, 3)],
     e: ch('e', 0), y: ch('y', 0), e0vow: e0vow / e0all, e0early: at(1, 0), e0late: at(6, 0),
+    // how well one clue alone predicts the chosen expert: always guess the usual expert for that position, or for that letter
+    byPos: d.posTab.reduce((a, r) => a + Math.max(...r), 0) / d.tokens,
+    byLetter: Object.values(d.chTab).reduce((a, r) => a + Math.max(...r), 0) / d.tokens,
   };
 };
 
@@ -95,7 +98,7 @@ const EXPERT_X = (e: number) => 45 + e * 210;
 
 // the "route your own name" step
 const TRY = 7;
-const tryControls: Control[] = [{ key: 'name', kind: 'text', label: { en: 'Name', zh: '名字' }, value: WORD.slice(1), maxLength: 7, pattern: 'a-z', placeholder: { en: 'a–z', zh: 'a–z' } }];
+const tryControls: Control[] = [{ key: 'name', kind: 'text', label: { en: 'Name', zh: '名字' }, value: 'james', maxLength: 7, pattern: 'a-z', placeholder: { en: 'a–z', zh: 'a–z' } }];
 const routeCache = new Map<string, { router: number[][]; chosen: number[] }>();
 const route = (name: string) => {
   let r = routeCache.get(name);
@@ -185,10 +188,10 @@ export const moe: Lesson = {
       short: { en: 'Specialists', zh: '專長' }, chapter: 'solution',
       title: { en: 'What did the experts specialize in?', zh: '專家們各自專精什麼？' },
       body: [
-        lz(() => { const s = spec(); return { en: `Nobody assigned roles. Over all ${VAL_NAMES.length} held-out names, the split is mostly by <b>position</b>: E1 takes ${pct(s.start)} of the start “.” and ${pct(s.second)} of 2nd letters, E2 takes ${pct(s.third)} of 3rd letters, E3 ${pct(Math.min(...s.mid))}–${pct(Math.max(...s.mid))} of letters 4–6.`, zh: `沒有人分配角色。統計驗證集全部 ${VAL_NAMES.length} 個名字，分工主要看<b>位置</b>：E1 接下 ${pct(s.start)} 的開頭「.」和 ${pct(s.second)} 的第 2 個字母，E2 接下 ${pct(s.third)} 的第 3 個字母，E3 則接下第 4～6 個字母的 ${pct(Math.min(...s.mid))}～${pct(Math.max(...s.mid))}。` }; }),
+        lz(() => { const s = spec(); return { en: `Nobody assigned roles. Over all ${VAL_NAMES.length} held-out names, <b>position</b> is a strong clue: E1 takes ${pct(s.start)} of the start “.” and ${pct(s.second)} of 2nd letters, E2 takes ${pct(s.third)} of 3rd letters, E3 ${pct(Math.min(...s.mid))}–${pct(Math.max(...s.mid))} of letters 4–6.`, zh: `沒有人分配角色。統計驗證集全部 ${VAL_NAMES.length} 個名字，<b>位置</b>是很強的線索：E1 接下 ${pct(s.start)} 的開頭「.」和 ${pct(s.second)} 的第 2 個字母，E2 接下 ${pct(s.third)} 的第 3 個字母，E3 則接下第 4～6 個字母的 ${pct(Math.min(...s.mid))}～${pct(Math.max(...s.mid))}。` }; }),
         lz(() => { const s = spec(); return { en: `E0 mixes both: it takes more of the later positions (${pct(s.e0early)} of 2nd letters, ${pct(s.e0late)} of 7th) and especially vowels there: ${pct(s.e)} of all “e” and ${pct(s.y)} of all “y”. ${pct(s.e0vow)} of its tokens are vowels (counting y).`, zh: `E0 兩者都有：位置越後面，它接下的越多（第 2 個字母的 ${pct(s.e0early)}，第 7 個的 ${pct(s.e0late)}），而且特別是那裡的母音：所有「e」有 ${pct(s.e)}、所有「y」有 ${pct(s.y)} 被送到它這裡。它收到的詞元有 ${pct(s.e0vow)} 是母音（y 也算）。` }; }),
       ],
-      callout: { kind: 'note', text: { en: 'Experts are rarely neat “topic experts”. In our model the router mostly uses position, which is easy to read from the vector.', zh: '專家很少是整整齊齊的「主題專家」。在我們的模型裡，路由器主要看位置，因為位置很容易從向量裡讀出來。' } },
+      callout: { kind: 'note', text: lz(() => { const s = spec(); return { en: `Neither clue explains everything. Guessing each token’s expert from its position alone is right for ${pct(s.byPos)} of held-out tokens; guessing from its letter alone, ${pct(s.byLetter)}. The router uses both, and experts are rarely neat “topic experts”.`, zh: `兩種線索都解釋不了全部。只看位置來猜每個詞元的專家，在驗證集的詞元上猜對 ${pct(s.byPos)}；只看字母來猜，猜對 ${pct(s.byLetter)}。路由器兩者都用，專家也很少是整整齊齊的「主題專家」。` }; }) },
       changed: [{ sign: '+', text: { en: 'routing counted over 615 names', zh: '統計 615 個名字的路由結果' } }],
     },
     {
@@ -196,7 +199,7 @@ export const moe: Lesson = {
       title: { en: 'Route your own name', zh: '替你自己的名字分派專家' },
       body: [
         { en: 'Try it: type a name (up to 7 letters) and watch the router’s real probabilities for every token, and the expert each one goes to.', zh: '動手試試：輸入一個名字（最多 7 個字母），看看路由器對每個詞元給出的真實機率，以及每個詞元被送去哪個專家。' },
-        { en: 'The right column shows the expert most tokens at that position go to, over all held-out names. Notice how often your name follows it, and where a letter (often a vowel late in the name) pulls a token to E0 instead.', zh: '最右邊那一欄，是驗證集所有名字在那個位置上最常被送去的專家。看看你的名字有多常跟它一樣，又在哪些地方因為字母本身（常常是名字後段的母音）而被拉去 E0。' },
+        lz(() => ({ en: `The right column shows the expert most tokens at that position go to, over all held-out names. On average ${pct(spec().byPos)} of tokens follow it, about two in three. Notice where your name breaks from it, often a vowel late in the name pulled to E0.`, zh: `最右邊那一欄，是驗證集所有名字在那個位置上最常被送去的專家。平均有 ${pct(spec().byPos)} 的詞元跟它一樣，大約三個裡有兩個。看看你的名字在哪裡不一樣，常常是名字後段的母音被拉去 E0。` })),
       ],
       changed: [{ sign: '+', text: { en: 'any name, routed live', zh: '任何名字，即時分派' } }],
     },
@@ -225,7 +228,7 @@ export const moe: Lesson = {
       title: { en: 'Mixture of experts in one line', zh: '一句話說完混合專家模型' },
       body: [
         { en: 'Replace the MLP with several experts. A router gives each token a probability per expert; the token goes to its top-k experts, and their outputs are added, each multiplied by its probability.', zh: '把 MLP 換成好幾個專家。路由器替每個詞元算出每個專家的機率；詞元送去前 k 名的專家，再把它們的輸出各乘上機率後相加。' },
-        lz(() => ({ en: `Our model stores ${fmt(data().w.total)} weights but uses ${fmt(data().w.active)} per token. The experts learned to split the work mostly by position.`, zh: `我們的模型存了 ${fmt(data().w.total)} 個權重，每個詞元卻只用 ${fmt(data().w.active)} 個。專家們學會的分工主要是看位置。` })),
+        lz(() => ({ en: `Our model stores ${fmt(data().w.total)} weights but uses ${fmt(data().w.active)} per token. The experts learned to split the work by position and by letter: position alone predicts the expert for ${pct(spec().byPos)} of tokens.`, zh: `我們的模型存了 ${fmt(data().w.total)} 個權重，每個詞元卻只用 ${fmt(data().w.active)} 個。專家們學會的分工同時看位置和字母：光看位置，就能猜對 ${pct(spec().byPos)} 的詞元該去哪個專家。` })),
       ],
       callout: { kind: 'next', text: { en: 'Next: The Residual Stream. Why the attention and MLP (or expert) outputs are <i>added</i> onto each token’s vector.', zh: '下一課：殘差流。為什麼注意力和 MLP（或專家）的輸出，都是「加」到每個詞元的向量上。' } },
     },
@@ -346,7 +349,7 @@ export const moe: Lesson = {
     let tryName = '';
     if (step === TRY) {
       controls = tryControls;
-      const name = String(input?.name ?? WORD.slice(1)).toLowerCase().replace(/[^a-z]/g, '').slice(0, 7);
+      const name = String(input?.name ?? 'james').toLowerCase().replace(/[^a-z]/g, '').slice(0, 7);
       tryName = name;
       const chars = ['.', ...name];
       const cell = 46, hx = 330, hy = 90;
