@@ -104,10 +104,20 @@ const q = (s: string) => t({ en: `“${s}”`, zh: `「${s}」` });
 
 // ---------- the "hide a letter" step ----------
 const TRY = 9;
-const tryControls = (): Control[] => [
-  { key: 'name', kind: 'text', label: { en: 'Name', zh: '名字' }, value: WORD.slice(1), maxLength: MAXN, pattern: 'a-z', placeholder: { en: 'a–z', zh: 'a–z' } },
-  ...Array.from({ length: MAXN }, (_, i): Control => ({ key: 'see' + i, kind: 'toggle', label: { en: `see #${i + 1}`, zh: `看得到 #${i + 1}` }, value: i !== F - 1 })),
-];
+// one toggle per earlier position, labelled with its letter; toggles past the typed name are hidden
+const tryControls = (raw: string): Control[] => {
+  const chars = ['.', ...raw];
+  return [
+    { key: 'name', kind: 'text', label: { en: 'Name', zh: '名字' }, value: WORD.slice(1), maxLength: MAXN, pattern: 'a-z', placeholder: { en: 'a–z', zh: 'a–z' } },
+    ...Array.from({ length: MAXN }, (_, i): Control => {
+      const ch = i < chars.length - 1 ? chars[i] : '';
+      // a letter that appears twice gets its position too, to tell the boxes apart
+      const twice = chars.slice(0, -1).filter((c) => c === ch).length > 1;
+      const name = twice ? `${ch} (#${i + 1})` : ch;
+      return { key: 'see' + i, kind: 'toggle', label: ch ? { en: `see ${name}`, zh: `看得到 ${name}` } : { en: `see #${i + 1}`, zh: `看得到 #${i + 1}` }, value: i !== F - 1, hidden: !ch };
+    }),
+  ];
+};
 const readTry = (input?: Input) => {
   const raw = String(input?.name ?? WORD.slice(1)).toLowerCase().replace(/[^a-z]/g, '').slice(0, MAXN);
   const ids = encode('.' + raw);
@@ -232,7 +242,7 @@ export const attention: Lesson = {
       short: { en: 'Try it', zh: '動手試試' }, chapter: 'solution',
       title: { en: 'Hide a letter from attention', zh: '把一個字母藏起來，不讓注意力看' },
       body: [
-        { en: 'Try it: untick a number to hide that token from the last letter’s attention, or type another name. A hidden token gets 0%, the others share its attention, and the rest of the real model runs as usual. (The last letter always sees itself; numbers past the name do nothing.)', zh: '動手試試：取消勾選某個編號，就能把那個詞元藏起來，不讓最後一個字母的注意力看到；也可以輸入別的名字。被藏起來的詞元分到 0%，它的注意力由其他詞元重新分配，模型其餘部分照常計算。（最後一個字母永遠看得到自己；超出名字長度的編號沒有作用。）' },
+        { en: 'Try it: untick a letter to hide it from the last letter’s attention, or type another name. A hidden token gets 0%, the others share its attention, and the rest of the real model runs as usual. (The last letter always sees itself, so it has no box.)', zh: '動手試試：取消勾選某個字母，就能把它藏起來，不讓最後一個字母的注意力看到；也可以輸入別的名字。被藏起來的詞元分到 0%，它的注意力由其他詞元重新分配，模型其餘部分照常計算。（最後一個字母永遠看得到自己，所以它沒有勾選框。）' },
         { en: 'It starts with the first m of <code>jimm</code> hidden: compare the two charts. Then tick it again, try hiding “.” instead, or type <code>jiam</code> or <code>tomm</code> and see whether the letter just before the last one matters most.', zh: '一開始，<code>jimm</code> 的第一個 m 被藏起來了：比較兩張圖。接著把它勾回來，改藏「.」看看，或輸入 <code>jiam</code>、<code>tomm</code>，看看是不是最後一個字母的前一個字母最重要。' },
       ],
       changed: [{ sign: '+', text: { en: 'Your own name and hidden letters', zh: '自己的名字和藏起來的字母' } }],
@@ -343,8 +353,8 @@ export const attention: Lesson = {
     let controls: Control[] | undefined;
     if (step === TRY) {
       // the first pass (no input yet) lists every control so their values are kept
-      controls = tryControls();
       const { raw, ids, L, visible } = readTry(input);
+      controls = tryControls(raw);
       const chipX = (i: number) => 450 - ((L + 1) * 62 - 18) / 2 + i * 62;
       items.push({ k: 'trl1', t: 'text', x: 20, y: 110, size: 13, tone: 'muted', text: t({ en: 'attention now', zh: '現在的注意力' }) });
       items.push({ k: 'trl2', t: 'text', x: 20, y: 130, size: 13, tone: 'muted', text: t({ en: '(all visible)', zh: '（全部看得到）' }) });

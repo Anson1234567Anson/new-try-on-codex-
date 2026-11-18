@@ -128,14 +128,14 @@ export const dataPipeline: Lesson = {
       short: { en: 'Split', zh: '切分' }, chapter: 'technique',
       title: { en: 'Shuffle, then hold some back', zh: '打亂，再保留一部分' },
       body: [
-        { en: 'The list was alphabetical, so we shuffle it first. Then every fifth name goes into a <b>held-out</b> set (also called a validation set) that training never touches.', zh: '原本的清單是按字母排序的，所以要先打亂。接著每五個名字取一個，放進<b>保留集</b>（也就是驗證集），訓練時完全不碰它。' },
-        { en: `That gives <b>${fmt(TRAIN_NAMES.length)}</b> training names and <b>${fmt(VAL_NAMES.length)}</b> held-out names. Only the held-out loss tells us whether the model learned how names work, rather than memorizing a list.`, zh: `這樣得到 <b>${fmt(TRAIN_NAMES.length)}</b> 個訓練用的名字和 <b>${fmt(VAL_NAMES.length)}</b> 個保留的名字。只有保留集上的損失，才能告訴我們模型是真的學會名字的規律，而不是背下一份清單。` },
+        { en: 'The list was alphabetical, so we shuffle it first. Then every fifth name goes into a <b>held-out</b> set (also called a validation set) that training never touches.', zh: '原本的清單是按字母排序的，所以要先打亂。接著每五個名字取一個，放進<b>驗證集</b>（held-out set），訓練時完全不碰它。' },
+        { en: `That gives <b>${fmt(TRAIN_NAMES.length)}</b> training names and <b>${fmt(VAL_NAMES.length)}</b> held-out names. Only the <b>held-out loss</b> (the loss on these names the model never trains on) tells us whether the model learned how names work, rather than memorizing a list.`, zh: `這樣得到 <b>${fmt(TRAIN_NAMES.length)}</b> 個訓練用的名字和 <b>${fmt(VAL_NAMES.length)}</b> 個驗證集名字。只有驗證損失（模型在訓練時從沒看過的 615 個名字上的損失），才能告訴我們模型是真的學會名字的規律，而不是背下一份清單。` },
       ],
-      callout: { kind: 'insight', text: { en: 'Shuffling matters: without it, the held-out set would be skewed toward some letters and the test would be unfair.', zh: '打亂很重要：如果不打亂，保留集就可能偏向某些字母，測試就不公平了。' } },
-      changed: [{ sign: '+', text: { en: `${fmt(TRAIN_NAMES.length)} training / ${fmt(VAL_NAMES.length)} held-out`, zh: `訓練 ${fmt(TRAIN_NAMES.length)} / 保留 ${fmt(VAL_NAMES.length)}` } }],
+      callout: { kind: 'insight', text: { en: 'Shuffling matters: if we had simply kept the last 615 names of the alphabetical list, the held-out set would be all s–z names and the test would be unfair. Shuffled names also mix well into batches.', zh: '打亂很重要：如果直接拿按字母排序清單的最後 615 個名字，驗證集就全是 s 到 z 開頭的名字，測試就不公平了。打亂後的名字，組成批次時也比較均勻。' } },
+      changed: [{ sign: '+', text: { en: `${fmt(TRAIN_NAMES.length)} training / ${fmt(VAL_NAMES.length)} held-out`, zh: `訓練 ${fmt(TRAIN_NAMES.length)} / 驗證 ${fmt(VAL_NAMES.length)}` } }],
     },
     {
-      short: { en: 'Count pairs', zh: '數字母對' }, chapter: 'technique',
+      short: { en: 'Count pairs', zh: '數相鄰對' }, chapter: 'technique',
       title: { en: 'Which two tokens sit side by side most?', zh: '哪兩個詞元最常相鄰？' },
       body: [
         { en: 'Our tokenizer is one letter per token. Real models use bigger pieces, learned from data by <b>byte-pair encoding</b> (BPE). We can run it on our own names right now.', zh: '我們的分詞器是一個字母一個詞元。真實的模型使用更大的片段，這些片段是用<b>位元組對編碼</b>（byte-pair encoding，BPE）從資料中學出來的。我們現在就可以拿自己的名字來跑一次。' },
@@ -148,9 +148,9 @@ export const dataPipeline: Lesson = {
       title: { en: 'Merge the winner, then repeat', zh: '合併冠軍，然後重複' },
       body: [
         { en: 'Step two: make “an” a new token and replace every a-next-to-n with it. Then count again and merge the new winner. That is the whole algorithm.', zh: '第二步：把「an」變成一個新的詞元，並把所有相鄰的 a、n 換成它。然後重新計數，再合併新的冠軍。整個演算法就是這樣。' },
-        { en: 'Here are the first 10 merges. Look how the example names now need fewer tokens: <code>emma</code> becomes em + ma.', zh: '這裡是前 10 次合併。看看範例名字現在需要的詞元變少了：<code>emma</code> 變成 em + ma。' },
+        { en: 'Here are the first 10 merges. Look at the example names: <code>anthony</code> already needs 5 tokens instead of 7 (an + t + h + on + y). emma and cecilia have to wait for later merges.', zh: '這裡是前 10 次合併。看看範例名字：<code>anthony</code> 已經只要 5 個詞元，而不是 7 個（an + t + h + on + y）。emma 和 cecilia 則要等之後的合併。' },
       ],
-      callout: { kind: 'note', text: { en: 'Merges can build on earlier merges: later on, “t + on” joins the token “on” made by merge 3.', zh: '合併可以建立在先前的合併上：之後的「t + on」，就是接上第 3 次合併做出來的「on」。' } },
+      callout: { kind: 'note', text: { en: 'Counts change after every merge. r + i was third (203), but once a + r became “ar”, many of those r’s were gone (aria → ar·i·a), so o + n won merge 3. Merges also build on each other: later, “t + on” joins the token “on”.', zh: '每合併一次，次數就會改變。r + i 原本排第三（203 次），但 a + r 變成「ar」之後，很多 r 都被吃掉了（aria → ar·i·a），所以第 3 次合併由 o + n 勝出。合併也會互相疊加：之後的「t + on」，就是接上「on」這個詞元。' } },
       changed: [{ sign: '+', text: { en: '10 merges: an, ar, on, el, en, …', zh: '10 次合併：an、ar、on、el、en……' } }],
     },
     {
@@ -158,7 +158,7 @@ export const dataPipeline: Lesson = {
       title: { en: 'Bigger vocabulary, shorter names', zh: '詞彙表變大，名字變短' },
       body: [
         { en: 'Every merge adds one token to the vocabulary and makes the average name shorter. After 200 merges our vocabulary has 227 tokens and a training name needs about 2.9 tokens instead of 5.4.', zh: '每合併一次，詞彙表就多一個詞元，而平均每個名字需要的詞元就變少。合併 200 次之後，詞彙表有 227 個詞元，一個訓練名字平均只要大約 2.9 個詞元，而不是 5.4 個。' },
-        { en: 'The amber line is the held-out names, which BPE never saw. It shrinks almost the same way, so the pieces are real patterns of names, not a memorized list.', zh: '琥珀色的線是 BPE 從沒看過的保留名字，它也幾乎以同樣的方式變短。這表示學到的片段是名字真正的規律，而不是背下來的清單。' },
+        { en: 'The amber line is the held-out names, which BPE never saw. It shrinks almost the same way, so the pieces are real patterns of names, not a memorized list.', zh: '琥珀色的線是 BPE 從沒看過的驗證集名字，它也幾乎以同樣的方式變短。這表示學到的片段是名字真正的規律，而不是背下來的清單。' },
       ],
       changed: [{ sign: '~', text: { en: 'Vocabulary 27 → 227, tokens per name 5.4 → 2.9', zh: '詞彙表 27 → 227，每個名字的詞元 5.4 → 2.9' } }],
     },
@@ -167,7 +167,7 @@ export const dataPipeline: Lesson = {
       title: { en: 'Case: each merge helps less', zh: '案例：每次合併的幫助越來越小' },
       body: [
         { en: 'The chart shows how many tokens each merge saves. The first saves 333; by merge 200 a merge saves only 7. Meanwhile every new token costs weights.', zh: '圖中是每次合併能省下多少詞元。第一次省下 333 個；到第 200 次，一次只省 7 個。與此同時，每個新詞元都要付出權重的代價。' },
-        { en: `In our model each token needs ${PER_TOKEN} weights (a row in the embedding table, a column in the output matrix, and one bias). 200 merges would add ${fmt(200 * PER_TOKEN)} weights, more than the whole model has now.`, zh: `在我們的模型裡，每個詞元需要 ${PER_TOKEN} 個權重（嵌入表的一列、輸出矩陣的一欄，以及一個偏差值）。合併 200 次會多出 ${fmt(200 * PER_TOKEN)} 個權重，比整個模型現在的權重還多。` },
+        { en: `In our model each token needs ${PER_TOKEN} weights (a row in the embedding table, a column in the output matrix, and one bias). 200 merges would add ${fmt(200 * PER_TOKEN)} weights, more than the whole model has now.`, zh: `在我們的模型裡，每個詞元需要 ${PER_TOKEN} 個權重（嵌入表的一列、輸出矩陣的一欄，以及一個偏差）。合併 200 次會多出 ${fmt(200 * PER_TOKEN)} 個權重，比整個模型現在的權重還多。` },
       ],
       callout: { kind: 'insight', text: { en: 'Choosing the vocabulary size is a trade-off: shorter sequences against a bigger model and rarer tokens. For our tiny list we keep plain letters.', zh: '決定詞彙表大小是一種取捨：序列變短，但模型變大、詞元也變得更少見。對我們這份小清單來說，我們維持單純的字母。' } },
     },
@@ -175,7 +175,7 @@ export const dataPipeline: Lesson = {
       short: { en: 'Real tokenizers', zh: '真實分詞器' }, chapter: 'technique',
       title: { en: 'Real tokenizers use the same recipe', zh: '真實的分詞器用的是同一套方法' },
       body: [
-        { en: 'BPE for language models was introduced by Sennrich and colleagues (2016). Real tokenizers run it over a huge amount of text, usually starting from the 256 possible <b>bytes</b> instead of letters, so any text in any language can be written.', zh: '把 BPE 用在語言模型上，是由 Sennrich 等人（2016）提出的。真實的分詞器會在海量文字上執行它，而且通常從 256 種可能的<b>位元組</b>開始，而不是從字母開始，因此任何語言的任何文字都寫得出來。' },
+        { en: 'BPE was brought to neural machine translation by Sennrich and colleagues (2016) and later adopted by language models. Real tokenizers run it over a huge amount of text, usually starting from the 256 possible <b>bytes</b> instead of letters, so any text in any language can be written. A Chinese character takes 3 bytes in UTF-8, so a tokenizer trained mostly on English often needs several tokens for one 漢字.', zh: 'Sennrich 等人（2016）把 BPE 用在神經機器翻譯上，後來語言模型也採用了它。真實的分詞器會在海量文字上執行它，而且通常從 256 種可能的<b>位元組</b>開始，而不是從字母開始，因此任何語言的任何文字都寫得出來。一個中文字在 UTF-8 裡佔 3 個位元組，所以主要用英文訓練的分詞器，常常要用好幾個詞元才能寫出一個漢字。' },
         { en: 'GPT-2, for example, learned 50,000 merges: 256 bytes + 50,000 merges + 1 end-of-text token = 50,257 tokens.', zh: '舉例來說，GPT-2 學了 50,000 次合併：256 個位元組 + 50,000 次合併 + 1 個「文字結束」詞元 = 50,257 個詞元。' },
       ],
       callout: { kind: 'note', text: { en: 'The tokenizer is trained once, before the model, and then frozen. The model only ever sees the ids it produces.', zh: '分詞器會在模型之前先訓練一次，之後就固定不變。模型看到的永遠只有它產生的編號。' } },
@@ -210,7 +210,7 @@ export const dataPipeline: Lesson = {
         items.push({ k: 'sa3', t: 'arrow', x1: 120, y1: 304, x2: 90, y2: 356 });
         items.push({ k: 'sa4', t: 'arrow', x1: 190, y1: 304, x2: 220, y2: 356 });
         items.push({ k: 'trainbox', t: 'box', x: 20, y: 360, w: 130, h: 60, label: fmt(TRAIN_NAMES.length), sub: t({ en: 'training', zh: '訓練集' }), tone: 'a' });
-        items.push({ k: 'valbox', t: 'box', x: 160, y: 360, w: 130, h: 60, label: fmt(VAL_NAMES.length), sub: t({ en: 'held-out', zh: '保留集' }), tone: 'b' });
+        items.push({ k: 'valbox', t: 'box', x: 160, y: 360, w: 130, h: 60, label: fmt(VAL_NAMES.length), sub: t({ en: 'held-out', zh: '驗證集' }), tone: 'b' });
       }
       names = step === 0 ? fmt(SRC.total) : step === 1 ? fmt(SRC.unique) : step === 2 ? fmt(NAMES.length) : fmt(TRAIN_NAMES.length);
       if (step === 2) perName = f2(NAMES.reduce((n, s) => n + s.length, 0) / NAMES.length);
@@ -225,7 +225,7 @@ export const dataPipeline: Lesson = {
         t({ en: '· capital letters', zh: '· 有大寫字母' }),
         t({ en: '· the same name on both lists', zh: '· 同一個名字出現在兩份清單' }),
         t({ en: '· names too long for the model', zh: '· 名字對模型來說太長' }),
-        t({ en: '· nothing held back for testing', zh: '· 沒有保留資料做測試' }),
+        t({ en: '· nothing held back for testing', zh: '· 沒有留下資料做測試' }),
       ];
       issues.forEach((s, i) => items.push({ k: 'iss' + i, t: 'text', x: 360, y: 300 + i * 30, text: s, tone: 'bad', size: 15 }));
     }
@@ -262,7 +262,7 @@ export const dataPipeline: Lesson = {
         const held = i % 5 === 0;
         items.push({ k: 'sh' + i, t: 'box', x: 360 + (i % 5) * 100, y: 90 + Math.floor(i / 5) * 60, w: 90, h: 44, label: n, tone: held ? 'b' : 'a' });
       });
-      items.push({ k: 'shn', t: 'text', x: 360, y: 300, text: t({ en: 'every fifth name (amber) is held out', zh: '每五個取一個（琥珀色）放進保留集' }), size: 15, bold: true, tone: 'b' });
+      items.push({ k: 'shn', t: 'text', x: 360, y: 300, text: t({ en: 'every fifth name (amber) is held out', zh: '每五個取一個（琥珀色）放進驗證集' }), size: 15, bold: true, tone: 'b' });
       items.push({ k: 'shn2', t: 'text', x: 360, y: 330, text: t({ en: 'the model trains only on the teal ones', zh: '模型只用青綠色的名字訓練' }), size: 14, tone: 'muted' });
     }
 
@@ -348,7 +348,7 @@ export const dataPipeline: Lesson = {
         { label: fmt(SRC.total), sub: t({ en: 'raw', zh: '原始' }) },
         { label: fmt(SRC.unique), sub: t({ en: 'clean', zh: '清理後' }) },
         { label: fmt(NAMES.length), sub: t({ en: '2–7 letters', zh: '2–7 個字母' }) },
-        { label: `${fmt(TRAIN_NAMES.length)} / ${fmt(VAL_NAMES.length)}`, sub: t({ en: 'train / held-out', zh: '訓練 / 保留' }), tone: 'a' as const },
+        { label: `${fmt(TRAIN_NAMES.length)} / ${fmt(VAL_NAMES.length)}`, sub: t({ en: 'train / held-out', zh: '訓練 / 驗證' }), tone: 'a' as const },
       ];
       boxes.forEach((b, i) => {
         items.push({ k: 'rc' + i, t: 'box', x: 40 + i * 215, y: 130, w: 175, h: 64, label: b.label, sub: b.sub, tone: b.tone });
@@ -370,7 +370,7 @@ export const dataPipeline: Lesson = {
       ],
       items,
       legend: step === 6
-        ? [{ tone: 'a', text: { en: 'training names', zh: '訓練名字' } }, { tone: 'b', text: { en: 'held-out names (BPE never saw them)', zh: '保留名字（BPE 沒看過）' } }]
+        ? [{ tone: 'a', text: { en: 'training names', zh: '訓練名字' } }, { tone: 'b', text: { en: 'held-out names (BPE never saw them)', zh: '驗證集名字（BPE 沒看過）' } }]
         : step === 7 ? [{ tone: 'bad', text: { en: 'tokens saved by each merge', zh: '每次合併省下的詞元' } }] : undefined,
     };
   },

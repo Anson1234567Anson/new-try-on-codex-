@@ -26,6 +26,16 @@ const last = (a: (number | null)[]) => a[a.length - 1] as number;
 const at = (a: (number | null)[], step: number) => a[step / EVERY];
 const f3 = (v: number | null) => (v === null || !Number.isFinite(v) ? 'NaN' : v > 99 ? Math.round(v).toLocaleString('en-US') : v.toFixed(3));
 const fl = (v: number) => +v.toPrecision(2);
+// first logged step from which the careful run stays at or below the bold one, up to step 500
+const CATCH = (() => {
+  const end = 500 / EVERY;
+  for (let i = 1; i <= end; i++) {
+    let ok = true;
+    for (let j = i; j <= end; j++) if ((RUNS.low.val[j] as number) > (RUNS.high.val[j] as number)) { ok = false; break; }
+    if (ok) return i * EVERY;
+  }
+  return 500;
+})();
 
 // what each step shows: which runs, and how much of the run
 const SHOW: { runs: Name[]; xmax: number }[] = [
@@ -60,8 +70,8 @@ export const learningRate: Lesson = {
       short: { en: 'The choice', zh: '抉擇' }, chapter: 'problem',
       title: { en: 'Careful or bold?', zh: '保守還是大膽？' },
       body: [
-        { en: `The <b>learning rate</b> is how big a step each weight takes. Here are two real Adam runs on our model: a careful one at ${RUNS.low.lr[0]} and a bold one at ${RUNS.high.lr[0]}, about ${RATIO}× larger. The chart shows the loss on held-out names.`, zh: `<b>學習率</b>決定每個權重一步跨多大。這是我們模型的兩次真實 Adam 訓練：保守的用 ${RUNS.low.lr[0]}，大膽的用 ${RUNS.high.lr[0]}，大約大了 ${RATIO} 倍。圖中是模型在沒練過的名字上的損失。` },
-        { en: `The bold run races ahead: after 25 steps its loss is ${f3(at(RUNS.high.val, 25))}, against ${f3(at(RUNS.low.val, 25))} for the careful one. The lower chart shows each run’s learning rate.`, zh: `大膽的那次一路領先：25 步後損失是 ${f3(at(RUNS.high.val, 25))}，保守的那次還在 ${f3(at(RUNS.low.val, 25))}。下方的圖是每次訓練所用的學習率。` },
+        { en: `The <b>learning rate</b> is how big a step each weight takes. Here are two real Adam runs on our model (comparison runs): a careful one at ${RUNS.low.lr[0]} and a bold one at ${RUNS.high.lr[0]}, about ${RATIO}× larger. These are Adam rates: Adam’s step is roughly the learning rate itself, so useful values are much smaller than the SGD 0.5 of the Training Loop lesson. The chart shows the held-out loss (the loss on 615 names the model never trained on).`, zh: `<b>學習率</b>決定每個權重一步跨多大。這是我們模型的兩次真實 Adam 訓練（比較實驗）：保守的用 ${RUNS.low.lr[0]}，大膽的用 ${RUNS.high.lr[0]}，大約大了 ${RATIO} 倍。這些是 Adam 的學習率：Adam 的步伐大約就是學習率本身，所以好用的數值比「訓練迴圈」那一課 SGD 的 0.5 小得多。圖中是驗證損失（模型在訓練時從沒看過的 615 個名字上的損失）。` },
+        { en: `The bold run races ahead: after 25 steps its loss is ${f3(at(RUNS.high.val, 25))}, against ${f3(at(RUNS.low.val, 25))} for the careful one. But from step ${CATCH} on, the careful run is level or ahead: speed early is not the same as a better result. The lower chart shows each run’s learning rate.`, zh: `大膽的那次一開始領先：25 步後損失是 ${f3(at(RUNS.high.val, 25))}，保守的那次還在 ${f3(at(RUNS.low.val, 25))}。但從第 ${CATCH} 步起，保守的那次就追平或超前：前期跑得快，不等於結果比較好。下方的圖是每次訓練所用的學習率。` },
       ],
       changed: [{ sign: '+', text: { en: 'Two runs, first 500 steps', zh: '兩次訓練，前 500 步' } }],
     },
@@ -69,8 +79,8 @@ export const learningRate: Lesson = {
       short: { en: 'Blow-up', zh: '崩潰' }, chapter: 'problem',
       title: { en: 'Case: the bold run suddenly breaks', zh: '案例：大膽的那次突然崩潰' },
       body: [
-        { en: `Let both runs continue to ${TOTAL.toLocaleString()} steps. For a long time the bold run looks fine. Then, between step ${BREAK_LO.toLocaleString()} and ${BREAK_HI.toLocaleString()}, its loss shoots up (the red line hits the top of the chart; the held-out loss reached ${f3(RUNS.high.val[BREAK])}).`, zh: `讓兩次訓練都跑到 ${TOTAL.toLocaleString()} 步。大膽的那次很長一段時間看起來都沒問題，然後在第 ${BREAK_LO.toLocaleString()} 到 ${BREAK_HI.toLocaleString()} 步之間，損失突然暴衝（紅線衝到圖表頂端；沒練過的名字上的損失到了 ${f3(RUNS.high.val[BREAK])}）。` },
-        { en: `One step jumped too far, landed somewhere bad, and the following steps made it worse. It recovers only partly, ending at ${f3(last(RUNS.high.val))}.`, zh: `某一步跨得太遠，落到很糟的地方，接下來的步伐又讓情況更糟。之後只恢復了一部分，最後停在 ${f3(last(RUNS.high.val))}。` },
+        { en: `Let both runs continue to ${TOTAL.toLocaleString()} steps. For a long time the bold run looks fine. Then, between step ${BREAK_LO.toLocaleString()} and ${BREAK_HI.toLocaleString()}, its loss shoots up (the red line hits the top of the chart; the held-out loss reached ${f3(RUNS.high.val[BREAK])}).`, zh: `讓兩次訓練都跑到 ${TOTAL.toLocaleString()} 步。大膽的那次很長一段時間看起來都沒問題，然後在第 ${BREAK_LO.toLocaleString()} 到 ${BREAK_HI.toLocaleString()} 步之間，損失突然暴衝（紅線衝到圖表頂端；驗證損失到了 ${f3(RUNS.high.val[BREAK])}）。` },
+        { en: `Remember the Gradients lesson, where a push that was too large turned “downhill” into “uphill”? One step did that, landed somewhere bad, and the next steps, starting from a bad spot, made it worse. It recovers only partly, ending at ${f3(last(RUNS.high.val))}.`, zh: `還記得「梯度」那一課嗎？推得太遠，「下坡」就變成了「上坡」。這裡某一步正是如此，落到很糟的地方，接下來的步伐從壞位置出發，又讓情況更糟。之後只恢復了一部分，最後停在 ${f3(last(RUNS.high.val))}。` },
       ],
       callout: { kind: 'note', text: { en: 'A run can look healthy for a long time before it breaks. Large training runs are watched constantly for exactly this.', zh: '一次訓練可能看起來健康了很久，然後才崩潰。大型訓練之所以要隨時盯著，正是為了這種狀況。' } },
       changed: [{ sign: '~', text: { en: `Bold run breaks near step ${BREAK_HI.toLocaleString()}`, zh: `大膽的那次在第 ${BREAK_HI.toLocaleString()} 步附近崩潰` } }],
@@ -107,7 +117,7 @@ export const learningRate: Lesson = {
       title: { en: 'Warmup + cosine: stable and the best of the three', zh: '暖身 + 餘弦：穩定，也是三者中最好的' },
       body: [
         { en: `The teal run uses the schedule, with the same peak (${PEAK}) as the run that broke. It never breaks, and ends with the lowest training loss (${f3(last(RUNS.wc.train))}, against ${f3(last(RUNS.low.train))} for the careful run).`, zh: `青色那次用了排程，最高學習率（${PEAK}）和崩潰的那次一樣。它從沒出事，最後的訓練損失也最低（${f3(last(RUNS.wc.train))}，保守的那次是 ${f3(last(RUNS.low.train))}）。` },
-        { en: `Be honest about the size of the win: on held-out names it ends at ${f3(last(RUNS.wc.val))}, the careful run at ${f3(last(RUNS.low.val))}. On a model this small the two end up practically tied.`, zh: `老實說，贏得不多：在沒練過的名字上，它最後是 ${f3(last(RUNS.wc.val))}，保守的那次是 ${f3(last(RUNS.low.val))}。在這麼小的模型上，兩者幾乎打平。` },
+        { en: `Be honest about the size of the win: its held-out loss ends at ${f3(last(RUNS.wc.val))}, the careful run at ${f3(last(RUNS.low.val))}. On a model this small the two end up practically tied.`, zh: `老實說，贏得不多：它最後的驗證損失是 ${f3(last(RUNS.wc.val))}，保守的那次是 ${f3(last(RUNS.low.val))}。在這麼小的模型上，兩者幾乎打平。` },
       ],
       changed: [{ sign: '+', text: { en: 'Third run: warmup + cosine', zh: '第三次訓練：暖身 + 餘弦' } }],
     },
@@ -115,7 +125,7 @@ export const learningRate: Lesson = {
       short: { en: 'What saved it', zh: '誰救了它' }, chapter: 'problem',
       title: { en: 'Case: what actually saved the schedule here?', zh: '案例：這裡到底是什麼救了排程？' },
       body: [
-        { en: `The bold run broke late, near step ${BREAK_HI.toLocaleString()}, not during the first steps. By then the schedule had already decayed to ${fl(WC_LR_AT_BREAK)}, well below ${RUNS.high.lr[0]}. On our tiny task it was the <i>decay</i> that kept it safe.`, zh: `大膽的那次是在後期、第 ${BREAK_HI.toLocaleString()} 步附近崩潰的，而不是一開始。那時排程的學習率已經降到 ${fl(WC_LR_AT_BREAK)}，遠低於 ${RUNS.high.lr[0]}。在我們的小任務上，真正保住它的是<i>衰減</i>。` },
+        { en: `The bold run broke late, near step ${BREAK_HI.toLocaleString()}, not during the first steps. By then the schedule had already decayed to ${fl(WC_LR_AT_BREAK)}, well below ${RUNS.high.lr[0]}. On our tiny task it was most likely the <i>decay</i> that kept it safe; a warmup-only run would confirm it, and we did not run one.`, zh: `大膽的那次是在後期、第 ${BREAK_HI.toLocaleString()} 步附近崩潰的，而不是一開始。那時排程的學習率已經降到 ${fl(WC_LR_AT_BREAK)}，遠低於 ${RUNS.high.lr[0]}。在我們的小任務上，保住它的很可能是<i>衰減</i>；要確認，還得跑一次「只有暖身」的訓練，而我們沒有跑。` },
         { en: 'Warmup made no visible difference here: our small model did not break early even without it. Larger models are much more fragile at the start, which is why warmup is standard practice for them.', zh: '暖身在這裡看不出明顯效果：我們的小模型就算沒有暖身，一開始也沒出事。大型模型在訓練初期脆弱得多，所以對它們來說，暖身是標準做法。' },
       ],
       callout: { kind: 'note', text: { en: 'The original 2017 Transformer paper already used a warmup of 4,000 steps.', zh: '2017 年最早提出 Transformer 的論文，就已經使用了 4,000 步的暖身。' } },
@@ -140,7 +150,7 @@ export const learningRate: Lesson = {
     items.push({
       k: 'loss', t: 'chart', x: 90, y: 40, w: 760, h: 230, ymin: tight ? 2.2 : 2.0, ymax: tight ? 3.0 : 4.0, xmax, every: EVERY,
       series: runs.map((r) => ({ pts: cut(RUNS[r].val), tone: TONE[r] })),
-      xlabel: t({ en: 'training steps', zh: '訓練步數' }), ylabel: t({ en: 'loss on held-out names (lower is better)', zh: '沒練過的名字上的損失（越低越好）' }),
+      xlabel: t({ en: 'training steps', zh: '訓練步數' }), ylabel: t({ en: 'held-out loss (lower is better)', zh: '驗證損失（越低越好）' }),
     });
     items.push({
       k: 'lr', t: 'chart', x: 90, y: 345, w: 760, h: 120, ymin: 0, ymax: 6, xmax, every: EVERY,
