@@ -133,7 +133,7 @@ function renderControls(controls: Control[] | undefined, input: Input): void {
 
 function setInput(key: string, value: number | string | boolean): void {
   inputs.set(`${lessonId}/${step}/${key}`, value);
-  renderScene();
+  if (lesson().tick) { paused = false; kick(); } else renderScene();
 }
 
 function renderScene(): void {
@@ -201,7 +201,8 @@ function renderAll(): void {
 function loop(): void {
   raf = 0;
   if (paused) return;
-  const more = lesson().tick?.(step) ?? false;
+  const l = lesson();
+  const more = l.tick?.(step, inputFor(l.scene(step, {}).controls)) ?? false;
   renderScene();
   if (more) raf = requestAnimationFrame(loop);
 }

@@ -42,8 +42,11 @@ export interface Lesson {
   steps: Step[];
   /** `input` holds the learner's current control values (empty until they touch a control). */
   scene(step: number, input?: Input): Scene;
-  /** For lessons that compute over time: advance a little; return true while there is more to do. */
-  tick?(step: number): boolean;
+  /**
+   * For lessons that compute over time: advance a little; return true while there is more to do.
+   * `input` is the step's current control values; when the learner changes one, tick is called again.
+   */
+  tick?(step: number, input: Input): boolean;
   /** Start the current step's computation again from scratch. */
   reset?(): void;
 }

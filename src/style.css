@@ -211,6 +211,9 @@ h2 { font-size: 19px; line-height: 1.3; letter-spacing: -.01em; margin-bottom: 1
 .s-guide { stroke: var(--b); stroke-width: 1.5; stroke-dasharray: 6 5; }
 .s-series { fill: none; stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; }
 .s-bar { fill: var(--line-strong); }
+.s-path { fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.s-path-fill { fill-opacity: .12; }
+.s-dot { stroke: var(--card); stroke-width: 2; }
 .s-bar-hi { fill: var(--a); }
 .s-bar-val { font-family: var(--mono) !important; font-size: 11px; fill: var(--muted) !important; }
 
