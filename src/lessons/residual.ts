@@ -83,6 +83,7 @@ const sz = (v: number) => (v >= 100 ? v.toFixed(0) : v >= 0.1 ? v.toPrecision(2)
 const top = (p: number[], n: number) =>
   p.map((v, i) => ({ label: CHARS[i], v })).sort((a, b) => b.v - a.v).slice(0, n).map((b) => ({ ...b, hi: b.label === 'y' }));
 const best = (p: number[]) => top(p, 1)[0];
+const q = (b: { label: string; v: number }) => t({ en: `“${b.label}” ${pct(b.v)}`, zh: `「${b.label}」${pct(b.v)}` });
 
 // stream geometry
 const SY = 160; // y of the stream line
@@ -284,7 +285,7 @@ export const residual: Lesson = {
       metrics: [
         { label: { en: 'Following', zh: '追蹤對象' }, value: t({ en: 'second “m”', zh: '第二個「m」' }) },
         { label: { en: 'Vector size', zh: '向量大小' }, value: step <= 3 ? size(vec).toFixed(2) : '—' },
-        { label: { en: 'Top prediction', zh: '最可能的下一個' }, value: mode ? `“${best(d.probs[mode]).label}” ${pct(best(d.probs[mode]).v)}` : step >= 7 ? `“${best(d.probs.normal).label}” ${pct(best(d.probs.normal).v)}` : '—' },
+        { label: { en: 'Top prediction', zh: '最可能的下一個' }, value: mode ? q(best(d.probs[mode])) : step >= 7 ? q(best(d.probs.normal)) : '—' },
         { label: { en: 'Held-out loss', zh: '驗證損失' }, value: mode ? d.loss[mode].toFixed(2) : step >= 7 ? d.loss.normal.toFixed(2) : '—' },
       ],
       items,
