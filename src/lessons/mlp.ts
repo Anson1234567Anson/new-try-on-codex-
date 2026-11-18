@@ -188,7 +188,7 @@ export const mlp: Lesson = {
         { en: 'For each token on its own: multiply by <code>w1</code> and add <code>b1</code> (16 → 32), apply <b>ReLU</b> (keep positives), multiply by <code>w2</code> and add <code>b2</code> (32 → 16), and add the result onto the token’s vector.', zh: '對每個詞元各自做：乘 <code>w1</code> 加 <code>b1</code>（16 → 32），套用 <b>ReLU</b>（只留正數），乘 <code>w2</code> 加 <code>b2</code>（32 → 16），再把結果加回詞元的向量上。' },
         { en: 'The 32 hidden numbers are neurons. Some learn readable detectors, like #22 for consonants and #2 for “late vowel”.', zh: '中間那 32 個數字就是神經元。有些學成了看得懂的偵測器，例如偵測子音的 22 號和偵測「後段母音」的 2 號。' },
       ],
-      callout: { kind: 'next', text: { en: 'Next: The Residual Stream. Both attention and the MLP add onto the token’s vector instead of replacing it, and that one choice is what lets deep models train.', zh: '下一課：殘差流。注意力和 MLP 都是「加到」詞元的向量上而不是取代它，正是這個選擇讓很深的模型也能訓練。' } },
+      callout: { kind: 'next', text: { en: 'Next: Mixture of Experts. What if each block had several MLPs, and a router sent each token to just one of them?', zh: '下一課：混合專家模型。如果每個區塊有好幾個 MLP，再由一個路由器把每個詞元只送到其中一個，會怎樣？' } },
     },
   ],
 

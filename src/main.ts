@@ -2,7 +2,6 @@ import './style.css';
 import { UI, fill, getLang, setLang, t, type Lang } from './i18n';
 import { BUILT_ORDER, LESSONS, MODULES, TOTAL } from './course';
 import { Stage } from './engine/scene';
-import weights from './model/weights.json';
 
 // ---------- saved state ----------
 const store = {
@@ -23,7 +22,6 @@ let step = 0;
 let paused = false;
 let raf = 0;
 
-const PARAMS = Object.values((weights as { params: Record<string, number[]> }).params).reduce((s, a) => s + a.length, 0);
 
 // ---------- page skeleton ----------
 const app = document.getElementById('app')!;
@@ -112,7 +110,7 @@ function renderChrome(): void {
   $('btns').innerHTML = `
     <button class="btn" data-act="replay">↺ ${t(UI.replay)}</button>
     ${l.tick ? `<button class="btn" data-act="pause">${paused ? '▶ ' + t(UI.resume) : '❚❚ ' + t(UI.pause)}</button>` : ''}`;
-  $('real').textContent = fill(UI.realNumbers, { n: PARAMS.toLocaleString() });
+  $('real').textContent = t(UI.realNumbers);
 
   $('timeline').innerHTML = `
     <div class="timeline__head"><b>${t(UI.inLesson)}</b><span>${fill(UI.stepOf, { a: step + 1, b: l.steps.length })}</span></div>

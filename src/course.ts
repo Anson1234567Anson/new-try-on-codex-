@@ -28,6 +28,7 @@ export const MODULES: Module[] = [
   ] },
   { title: { en: 'The Transformer Block', zh: 'Transformer 區塊' }, lessons: [
     l('mlp', 'The MLP Layer', 'MLP 層'),
+    l('moe', 'Mixture of Experts', '混合專家模型（MoE）'),
     l('residual', 'The Residual Stream', '殘差流'),
     l('layer-norm', 'Layer Normalization', '層正規化'),
     l('stacking', 'Stacking Blocks', '堆疊區塊'),
@@ -46,6 +47,7 @@ export const MODULES: Module[] = [
     l('evaluation', 'Checkpoints and Evaluation', '檢查點與評估'),
     l('fine-tuning', 'Pretraining vs Fine-Tuning', '預訓練與微調'),
     l('lora', 'LoRA', 'LoRA'),
+    l('moe-training', 'Training Mixture-of-Experts Models', '訓練混合專家模型'),
   ] },
   { title: { en: 'Whole Systems', zh: '完整系統' }, lessons: [
     l('tiny-gpt', 'Build a Tiny GPT', '打造一個迷你 GPT'),
