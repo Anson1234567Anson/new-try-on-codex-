@@ -338,9 +338,9 @@ export const trainLive: Lesson = {
       if ((step === 6 || step === OWN_STEP) && r.val.length > 1 && Number.isFinite(fin[bi])) {
         const bx = 70 + ((bi * EVERY) / TOTAL) * 440, by = 50 + 180 - ((Math.min(3.6, Math.max(2, fin[bi])) - 2) / 1.6) * 180;
         items.push({ k: 'best', t: 'dot', x: bx, y: by, r: 6, tone: 'b' });
-        items.push({ k: 'bestT', t: 'text', x: Math.min(bx, 500), y: by - 12, anchor: 'end', size: 12.5, bold: true, tone: 'b', text: t({ en: `best ${fin[bi].toFixed(3)} @${bi * EVERY}`, zh: `最佳 ${fin[bi].toFixed(3)} @${bi * EVERY}` }) });
+        items.push({ k: 'bestT', t: 'text', x: bx < 300 ? bx + 10 : bx - 10, y: by - 12, anchor: bx < 300 ? 'start' : 'end', size: 12.5, bold: true, tone: 'b', text: t({ en: `best ${fin[bi].toFixed(3)} @${bi * EVERY}`, zh: `最佳 ${fin[bi].toFixed(3)} @${bi * EVERY}` }) });
       }
-      if (step === OWN_STEP && ghost) items.push({ k: 'ghl', t: 'text', x: 510, y: 44, anchor: 'end', size: 12.5, tone: 'muted', text: t({ en: `gray: previous run (${ghost.cfg.peak}, warmup ${ghost.cfg.warm}, batch ${ghost.cfg.batch})`, zh: `灰線：上一次（${ghost.cfg.peak}、暖身 ${ghost.cfg.warm}、批次 ${ghost.cfg.batch}）` }) });
+      if (step === OWN_STEP && ghost) items.push({ k: 'ghl', t: 'text', x: 70, y: 274, size: 12, tone: 'muted', text: t({ en: `gray: previous run (${ghost.cfg.peak}, warmup ${ghost.cfg.warm}, batch ${ghost.cfg.batch})`, zh: `灰線：上一次（${ghost.cfg.peak}、暖身 ${ghost.cfg.warm}、批次 ${ghost.cfg.batch}）` }) });
     } else {
       const v = r.val[0];
       items.push({ k: 'big', t: 'text', x: 290, y: 150, anchor: 'middle', size: 30, bold: true, tone: 'bad', text: f3(v) });

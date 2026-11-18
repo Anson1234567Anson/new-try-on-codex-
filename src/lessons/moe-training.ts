@@ -287,12 +287,12 @@ export const moeTraining: Lesson = {
         });
         const ly = base - (step === 6 ? cap : even()) * S;
         items.push({ k: 'gline' + g, t: 'box', x: gx - 10, y: ly - 1, w: 360, h: 3, tone: step === 6 ? 'bad' : 'muted' });
-        items.push({ k: 'gll' + g, t: 'text', x: gx - 8, y: ly - 8, text: step === 6 ? t({ en: `capacity ${cap}`, zh: `容量 ${cap}` }) : t({ en: `even: ${even()}`, zh: `平均：${even()}` }), size: 13, anchor: 'start', tone: step === 6 ? 'bad' : 'muted' });
+        if (step === 5) items.push({ k: 'gll' + g, t: 'text', x: gx - 8, y: ly - 8, text: t({ en: `even: ${even()}`, zh: `平均：${even()}` }), size: 13, anchor: 'start', tone: 'muted' });
       }
       items.push({ k: 'gnote', t: 'text', x: 450, y: 490, text: step === 5
         ? t({ en: `tokens per expert in our batch of ${NB} names · GPUs: illustration`, zh: `我們 ${NB} 個名字的批次中，每個專家的詞元數 · GPU：示意` })
         : t({ en: `capacity = ${cf.toFixed(2)} × ${d.tokens} ÷ 4, rounded down · outlined = kept · red = overflow, dropped (the latest arrivals)`, zh: `容量 = ${cf.toFixed(2)} × ${d.tokens} ÷ 4（無條件捨去）· 空心 = 留下 · 紅色 = 溢出、被丟掉（最晚到的詞元）` }), size: 13, anchor: 'middle', tone: 'muted' });
-      if (step === 6) (['b', 'n'] as const).forEach((g, i) => items.push({ k: 'gdrop' + g, t: 'text', x: (i ? 490 : 60) + 175, y: 64, text: t({ en: `dropped ${caps[g].dropped} of ${d.tokens} (${pct1(caps[g].dropped / d.tokens)})`, zh: `丟掉 ${d.tokens} 個中的 ${caps[g].dropped} 個（${pct1(caps[g].dropped / d.tokens)}）` }), size: 14, bold: true, anchor: 'middle', tone: caps[g].dropped ? 'bad' : 'good' }));
+      if (step === 6) (['b', 'n'] as const).forEach((g, i) => items.push({ k: 'gdrop' + g, t: 'text', x: (i ? 490 : 60) + 175, y: 64, text: t({ en: `capacity ${caps[g].cap} · dropped ${caps[g].dropped} of ${d.tokens} (${pct1(caps[g].dropped / d.tokens)})`, zh: `容量 ${caps[g].cap} · 丟掉 ${d.tokens} 個中的 ${caps[g].dropped} 個（${pct1(caps[g].dropped / d.tokens)}）` }), size: 14, bold: true, anchor: 'middle', tone: caps[g].dropped ? 'bad' : 'good' }));
     }
 
     if (step === 7) {

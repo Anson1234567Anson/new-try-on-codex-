@@ -50,6 +50,7 @@ const scoreName = (name: string) => {
   return r;
 };
 const NAME_STEP = 6;
+const oneIn = (n: number) => (n < 100 ? f1(n) : n < 10000 ? Math.round(n).toLocaleString('en-US') : '10k+');
 const NAME_CTL: Control = { key: 'name', kind: 'text', label: { en: 'Type a name', zh: '輸入一個名字' }, value: VAL_NAMES[0], maxLength: 7, pattern: 'a-z', placeholder: { en: 'a–z, up to 7 letters', zh: 'a–z，最多 7 個字母' } };
 
 export const evaluation: Lesson = {
@@ -231,9 +232,9 @@ export const evaluation: Lesson = {
           const p = N.probs[i];
           items.push({ k: 'lt' + i, t: 'token', x, y: 130, text: CHARS[c], tone: c === 0 ? 'b' : 'a' });
           items.push({ k: 'lp' + i, t: 'text', x: x + 22, y: 210, anchor: 'middle', size: 14, mono: true, text: (p >= 0.995 ? '>99' : p < 0.01 ? '<1' : Math.round(p * 100)) + '%' });
-          items.push({ k: 'ln' + i, t: 'text', x: x + 22, y: 240, anchor: 'middle', size: 15, bold: true, tone: 1 / p > 10 ? 'bad' : 'a', text: t({ en: `1 in ${f1(1 / p)}`, zh: `${f1(1 / p)} 選 1` }) });
+          items.push({ k: 'ln' + i, t: 'text', x: x + 22, y: 240, anchor: 'middle', size: 15, bold: true, tone: 1 / p > 10 ? 'bad' : 'a', text: t({ en: `1 in ${oneIn(1 / p)}`, zh: `${oneIn(1 / p)} 選 1` }) });
         });
-        items.push({ k: 'lvN', t: 'text', x: 450, y: 310, anchor: 'middle', size: 17, bold: true, mono: true, tone: N.loss > L.loss ? 'bad' : 'a', text: t({ en: `“${name}”: loss ${f3(N.loss)} → perplexity ${f1(ppl(N.loss))}`, zh: `「${name}」：損失 ${f3(N.loss)} → 困惑度 ${f1(ppl(N.loss))}` }) });
+        items.push({ k: 'lvN', t: 'text', x: 450, y: 310, anchor: 'middle', size: 17, bold: true, mono: true, tone: N.loss > L.loss ? 'bad' : 'a', text: t({ en: `“${name}”: loss ${f3(N.loss)} → perplexity ${oneIn(ppl(N.loss))}`, zh: `「${name}」：損失 ${f3(N.loss)} → 困惑度 ${oneIn(ppl(N.loss))}` }) });
         items.push({ k: 'lvW', t: 'text', x: 450, y: 338, anchor: 'middle', size: 13.5, tone: 'muted', text: where });
       }
       items.push({ k: 'lvAll', t: 'text', x: 450, y: 390, anchor: 'middle', size: 15, mono: true, text: t({ en: `average over all ${L.count} held-out names: loss ${f3(L.loss)} → perplexity ${f1(ppl(L.loss))}`, zh: `全部 ${L.count} 個驗證集名字的平均：損失 ${f3(L.loss)} → 困惑度 ${f1(ppl(L.loss))}` }) });
