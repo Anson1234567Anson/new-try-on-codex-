@@ -77,10 +77,13 @@ function inner(it: Item): string {
       const px = (i: number) => (i / Math.max(1, it.xmax)) * it.w;
       const py = (v: number) => it.h - ((Math.min(it.ymax, Math.max(it.ymin, v)) - it.ymin) / (it.ymax - it.ymin)) * it.h;
       let s = `<rect class="s-chart-bg" width="${it.w}" height="${it.h}" rx="8"/>`;
+      // pick decimals from the axis range, so 0–0.02 and 0–1100 both read well
+      const span = it.ymax - it.ymin;
+      const dec = span >= 20 ? 0 : span >= 2 ? 1 : span >= 0.2 ? 2 : span >= 0.02 ? 3 : 4;
       for (let g = 0; g <= 4; g++) {
         const v = it.ymin + ((it.ymax - it.ymin) * g) / 4;
         s += `<line class="s-grid" x1="0" x2="${it.w}" y1="${n1(py(v))}" y2="${n1(py(v))}"/>
-          <text class="s-axis" x="-8" y="${n1(py(v) + 4)}" text-anchor="end">${v.toFixed(1)}</text>`;
+          <text class="s-axis" x="-8" y="${n1(py(v) + 4)}" text-anchor="end">${v.toFixed(dec)}</text>`;
       }
       if (it.guide) s += `<line class="s-guide" x1="0" x2="${it.w}" y1="${n1(py(it.guide.y))}" y2="${n1(py(it.guide.y))}"/>
         <text class="s-sub" x="${it.w - 6}" y="${n1(py(it.guide.y) - 6)}" text-anchor="end">${esc(it.guide.label)}</text>`;
