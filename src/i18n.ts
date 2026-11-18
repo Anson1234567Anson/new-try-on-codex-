@@ -30,8 +30,8 @@ export const UI = {
   keys: { en: '← → step · R replay · Space pause', zh: '← → 換步 · R 重播 · 空白鍵 暫停' },
   theme: { en: 'Switch light / dark', zh: '切換淺色／深色' },
   realNumbers: {
-    en: 'Every number here is computed live by a real {n}-weight transformer running in this tab.',
-    zh: '這裡的每個數字，都是由一個真正的 Transformer（{n} 個權重）在這個分頁中即時算出來的。',
+    en: 'Diagram numbers come from real models: computed live in this tab, or from real training runs saved with the course. Illustrations are labelled.',
+    zh: '圖中的數字都來自真正的模型：不是在這個分頁中即時算出來的，就是課程附帶的真實訓練紀錄。示意圖會另外標明。',
   },
   chapter: {
     problem: { en: 'Problem', zh: '問題' },
