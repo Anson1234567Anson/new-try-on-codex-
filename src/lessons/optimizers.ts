@@ -322,7 +322,14 @@ export const optimizers: Lesson = {
       items.push({ k: 'vgoalT', t: 'text', x: px(0) - 14, y: py(0) + 5, anchor: 'end', size: 13, bold: true, tone: 'good', text: t({ en: 'goal', zh: '目標' }) });
       items.push({ k: 'vstart', t: 'dot', x: px(1), y: py(1), r: 7, tone: 'bad', label: t({ en: 'start', zh: '起點' }) });
       const off = run.hist[0].some((a, i) => !inside(a, run.hist[1][i]));
-      if (off) items.push({ k: 'voff', t: 'text', x: X0 + PW / 2, y: Y0 + PH + 28, anchor: 'middle', size: 14.5, bold: true, tone: 'bad', text: t({ en: `A flew off the map: ${fw(run.end[0])} after ${STEPS} steps`, zh: `A 彈出圖外：${STEPS} 步後是 ${fw(run.end[0])}` }) });
+      if (off) {
+        // say whether the path is still off the map at the end, or overshot and came back
+        const stillOff = !inside(run.end[0], run.end[1]);
+        items.push({ k: 'voff', t: 'text', x: X0 + PW / 2, y: Y0 + PH + 28, anchor: 'middle', size: 14.5, bold: true, tone: stillOff ? 'bad' : 'b',
+          text: stillOff
+            ? t({ en: `A flew off the map: ${fw(run.end[0])} after ${STEPS} steps`, zh: `A 彈出圖外：${STEPS} 步後是 ${fw(run.end[0])}` })
+            : t({ en: `The path overshot off the map, then came back: A = ${fw(run.end[0])} after ${STEPS} steps`, zh: `路徑先衝出圖外，後來又回來了：${STEPS} 步後 A = ${fw(run.end[0])}` }) });
+      }
       // all three optimizers at this learning rate
       const TX = 610;
       items.push({ k: 'vtT', t: 'text', x: TX, y: 70, size: 14, bold: true, tone: 'muted', text: t({ en: `after ${STEPS} steps at rate ${lr.toFixed(2)}`, zh: `學習率 ${lr.toFixed(2)}，${STEPS} 步後` }) });

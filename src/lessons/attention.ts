@@ -374,7 +374,7 @@ export const attention: Lesson = {
         chars.forEach((ch, i) => {
           const hidden = !visible[i];
           items.push({ k: 'tok' + i, t: 'token', text: ch, x: chipX(i), y: 50, sub: pct(now.att[i]), tone: i === L ? 'a' : hidden ? 'bad' : ch === '.' ? 'b' : 'ink', dim: hidden });
-          items.push({ k: 'tn' + i, t: 'text', x: chipX(i) + 22, y: 38, anchor: 'middle', size: 13, tone: hidden ? 'bad' : 'muted', mono: true, text: i === L ? t({ en: 'last', zh: '最後' }) : hidden ? t({ en: `#${i + 1} hidden`, zh: `#${i + 1} 藏起` }) : `#${i + 1}` });
+          items.push({ k: 'tn' + i, t: 'text', x: chipX(i) + 22, y: 38, anchor: 'middle', size: 13, tone: hidden ? 'bad' : 'muted', mono: true, text: i === L ? t({ en: 'last', zh: '最後' }) : hidden ? `#${i + 1} ✕` : `#${i + 1}` });
           items.push({ k: 'tw' + i, t: 'text', x: chipX(i) + 22, y: 128, anchor: 'middle', size: 13, tone: 'muted', mono: true, text: `(${pct(full.att[i])})` });
         });
         const ref = argmax(full.probs);
