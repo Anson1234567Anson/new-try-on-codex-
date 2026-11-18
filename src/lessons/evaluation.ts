@@ -118,7 +118,7 @@ export const evaluation: Lesson = {
       short: { en: 'Letter by letter', zh: '逐字母' }, chapter: 'technique',
       title: { en: 'Perplexity, letter by letter', zh: '逐字母看困惑度' },
       body: [
-        { en: `Here is the model that ships with this course, run live on the held-out name “${live().name}”. Under each letter: the probability it gave the right answer, written as “1 in N”.`, zh: `這是本課程附帶的模型，現場跑在保留名字「${live().name}」上。每個字母下方是它給正確答案的機率，寫成「N 選 1」。` },
+        { en: `Here is the model that ships with this course, run live on the held-out name “${VAL_NAMES[0]}”. Under each letter: the probability it gave the right answer, written as “1 in N”.`, zh: `這是本課程附帶的模型，現場跑在保留名字「${VAL_NAMES[0]}」上。每個字母下方是它給正確答案的機率，寫成「N 選 1」。` },
         { en: 'Some letters are easy (1 in 2 or 3), some are a real surprise (1 in 20 or more). The perplexity is a kind of average of these N values (the geometric mean), over every letter of every held-out name.', zh: '有些字母很好猜（2、3 選 1），有些則出乎意料（20 選 1 以上）。困惑度就是把所有保留名字中每個字母的這些 N 做一種平均（幾何平均）。' },
       ],
       changed: [{ sign: '+', text: { en: 'Live check on a held-out name', zh: '在保留名字上現場檢查' } }],
