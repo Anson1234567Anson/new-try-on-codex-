@@ -2,14 +2,14 @@ import type { Lesson } from './types';
 import type { Item } from '../engine/scene';
 import { t } from '../i18n';
 import { GPT, type Weights } from '../model/gpt';
-import { CHARS, NAMES } from '../model/data';
+import { CHARS, NAMES, encode } from '../model/data';
 import weights from '../model/weights.json';
 
-// The trained model reads ".emm" and must predict what follows the second m.
+// The trained model reads ".jimm" and must predict what follows the second m.
 const model = GPT.fromJSON(weights as Weights);
-const IDS = [0, 5, 13, 13];
+const IDS = encode('.jimm');
 const LABELS = IDS.map((i) => CHARS[i]);
-const F = 3; // the token we follow: the second "m"
+const F = IDS.length - 1; // the token we follow: the second "m"
 const tr = model.forward(IDS);
 const x = IDS.map((_, i) => tr.x.row(i));
 const keys = IDS.map((_, i) => tr.k[0].row(i));
@@ -22,8 +22,8 @@ const mixed = tr.mixed[0].row(F);
 const top = (p: number[], n: number, hi?: string) =>
   p.map((v, i) => ({ label: CHARS[i], v })).sort((a, b) => b.v - a.v).slice(0, n).map((b) => ({ ...b, hi: b.label === hi }));
 
-const afterFirstM = top(model.next([0, 5, 13]), 6);
-const afterSecondM = top(model.next(IDS), 6, 'a');
+const afterFirstM = top(model.next(IDS.slice(0, -1)), 6);
+const afterSecondM = top(model.next(IDS), 6);
 
 // What follows "m" across the whole training list, ignoring context.
 const counts = new Array(27).fill(0);
@@ -60,7 +60,7 @@ export const attention: Lesson = {
       short: { en: 'The problem', zh: '問題' }, chapter: 'problem',
       title: { en: 'One letter is not enough', zh: '只看一個字母是不夠的' },
       body: [
-        { en: 'Our model is writing a name. So far it has <code>.emm</code>, and it must choose the next letter.', zh: '我們的模型正在寫一個名字。目前寫到 <code>.emm</code>，它必須選出下一個字母。' },
+        { en: 'Our model is writing a name. So far it has <code>.jimm</code>, and it must choose the next letter.', zh: '我們的模型正在寫一個名字。目前寫到 <code>.jimm</code>，它必須選出下一個字母。' },
         { en: `If it looked only at the last letter, “m”, the best it could do is this chart: what follows “m” across all ${NAMES.length} names. No answer stands out. To do better it must use the letters that came before.`, zh: `如果只看最後一個字母「m」，它頂多只能參考這張圖：在全部 ${NAMES.length} 個名字裡，「m」後面接什麼。沒有哪個答案特別突出。想猜得更準，就必須用到前面的字母。` },
       ],
       callout: { kind: 'insight', text: { en: 'The meaning of a token depends on its context. Attention is the mechanism that lets each token gather information from the others.', zh: '一個詞元的意義取決於它的上下文。注意力（attention）就是讓每個詞元從其他詞元收集資訊的機制。' } },
@@ -72,7 +72,7 @@ export const attention: Lesson = {
         { en: 'Inside the model each token is a <b>vector</b>: here, 16 numbers. Orange cells are positive, blue cells negative, and stronger colour means a larger number.', zh: '在模型內部，每個詞元都是一個<b>向量</b>：在這裡是 16 個數字。橘色格子是正數，藍色格子是負數，顏色越深代表數值越大。' },
         { en: 'The vector encodes which letter it is <i>and</i> where it sits. That is why the two m’s have different vectors. (The Embeddings lesson shows where these numbers come from.)', zh: '這個向量同時記錄了「是哪個字母」<i>以及</i>「在第幾個位置」，所以兩個 m 的向量並不相同。（這些數字的來源會在「嵌入」那一課說明。）' },
       ],
-      changed: [{ sign: '+', text: { en: '4 vectors of 16 numbers', zh: '4 個向量，各 16 個數字' } }],
+      changed: [{ sign: '+', text: { en: `${IDS.length} vectors of 16 numbers`, zh: `${IDS.length} 個向量，各 16 個數字` } }],
     },
     {
       short: { en: 'Query', zh: '查詢' }, chapter: 'technique',
@@ -91,7 +91,7 @@ export const attention: Lesson = {
         { en: 'Each token, including the “m” itself, is multiplied by a second learned matrix to produce a <b>key</b>: “this is what I contain”.', zh: '每個詞元（包括「m」自己）都會乘上第二個學習得來的矩陣，產生一把<b>鍵（key）</b>：「我這裡有這樣的東西」。' },
         { en: 'A query is a question; keys are the labels it gets compared against.', zh: '查詢是一個問題，而鍵就是用來和它比對的標籤。' },
       ],
-      changed: [{ sign: '+', text: { en: '4 key vectors', zh: '4 個鍵向量' } }],
+      changed: [{ sign: '+', text: { en: `${IDS.length} key vectors`, zh: `${IDS.length} 個鍵向量` } }],
     },
     {
       short: { en: 'Scores', zh: '分數' }, chapter: 'technique',
@@ -111,7 +111,7 @@ export const attention: Lesson = {
       ],
       callout: { kind: 'insight', text: { en: 'This is the causal mask. Without it the model could copy the answer during training and would learn nothing.', zh: '這就是因果遮罩（causal mask）。沒有它，模型在訓練時就能直接抄答案，什麼也學不到。' } },
       changed: [
-        { sign: '+', text: { en: '4 × 4 grid of scores', zh: '4 × 4 的分數表' } },
+        { sign: '+', text: { en: `${IDS.length} × ${IDS.length} grid of scores`, zh: `${IDS.length} × ${IDS.length} 的分數表` } },
         { sign: '~', text: { en: 'Future positions masked', zh: '未來的位置被遮住' } },
       ],
     },
@@ -138,8 +138,8 @@ export const attention: Lesson = {
       short: { en: 'Result', zh: '結果' }, chapter: 'solution',
       title: { en: 'Same letter, different answer', zh: '同一個字母，不同的答案' },
       body: [
-        { en: 'Here are the model’s real predictions. After the <i>first</i> m (<code>.em</code>) it is torn between several letters.', zh: '這是模型真正的預測。在<i>第一個</i> m 之後（<code>.em</code>），它在好幾個字母之間猶豫。' },
-        { en: `After the <i>second</i> m (<code>.emm</code>) it says “a” with ${pct(afterSecondM[0].v)}. The token is the same letter both times. Only the context differs, and attention is what carried it in.`, zh: `在<i>第二個</i> m 之後（<code>.emm</code>），它以 ${pct(afterSecondM[0].v)} 的機率選了「a」。兩次都是同一個字母，不同的只有上下文，而把上下文帶進來的正是注意力。` },
+        { en: 'Here are the model’s real predictions. After the <i>first</i> m (<code>.jim</code>) it is torn between several letters.', zh: '這是模型真正的預測。在<i>第一個</i> m 之後（<code>.jim</code>），它在好幾個字母之間猶豫。' },
+        { en: `After the <i>second</i> m (<code>.jimm</code>) it says “${afterSecondM[0].label}” with ${pct(afterSecondM[0].v)}, as in “jimmy”. The token is the same letter both times. Only the context differs, and attention is what carried it in.`, zh: `在<i>第二個</i> m 之後（<code>.jimm</code>），它以 ${pct(afterSecondM[0].v)} 的機率選了「${afterSecondM[0].label}」，就像「jimmy」。兩次都是同一個字母，不同的只有上下文，而把上下文帶進來的正是注意力。` },
       ],
       changed: [{ sign: '~', text: { en: 'Prediction now depends on context', zh: '預測現在取決於上下文' } }],
     },
@@ -171,7 +171,7 @@ export const attention: Lesson = {
       });
 
     if (step === 0) {
-      items.push({ k: 'next', t: 'token', x: 300 + 4 * 62, y: 50, text: '?', tone: 'a' });
+      items.push({ k: 'next', t: 'token', x: 300 + IDS.length * 62, y: 50, text: '?', tone: 'a' });
       items.push({ k: 'data', t: 'bars', x: 200, y: 190, w: 500, h: 230, items: afterAnyM, title: t({ en: 'what follows “m” across all names in the list', zh: '在清單的所有名字裡，「m」後面接的字母' }) });
     }
 
@@ -198,7 +198,7 @@ export const attention: Lesson = {
     if (step === 4) {
       items.push({ k: 'hs', t: 'text', x: 600, y: rowY(0) - 24, text: t({ en: 'score', zh: '分數' }), size: 14, tone: 'muted', anchor: 'middle' });
       scores[F].forEach((s, i) => items.push({ k: 's' + i, t: 'text', x: 600, y: rowY(i) + 28, text: s.toFixed(2), size: 17, anchor: 'middle', mono: true, bold: true, tone: i === best ? 'a' : 'ink' }));
-      items.push({ k: 'sn', t: 'text', x: 600, y: rowY(3) + 80, text: t({ en: 'score = query · key ÷ 4', zh: '分數 = 查詢 · 鍵 ÷ 4' }), size: 14, tone: 'muted', anchor: 'middle' });
+      items.push({ k: 'sn', t: 'text', x: 600, y: rowY(F) + 80, text: t({ en: 'score = query · key ÷ 4', zh: '分數 = 查詢 · 鍵 ÷ 4' }), size: 14, tone: 'muted', anchor: 'middle' });
     }
 
     if (grid) {
@@ -218,15 +218,15 @@ export const attention: Lesson = {
       vals.forEach((v, i) => {
         items.push({ k: 'w' + i, t: 'text', x: 150, y: rowY(i) + 28, text: pct(att[F][i]), size: 16, anchor: 'middle', mono: true, bold: true, tone: i === best ? 'a' : 'ink' });
         items.push({ k: 'v' + i, t: 'vec', x: 210, y: rowY(i) + 11, v });
-        items.push({ k: 'va' + i, t: 'arrow', x1: 394, y1: rowY(i) + 22, x2: 592, y2: rowY(1.5) + 22, tone: i === best ? 'a' : 'muted' });
+        items.push({ k: 'va' + i, t: 'arrow', x1: 394, y1: rowY(i) + 22, x2: 592, y2: rowY(F / 2) + 22, tone: i === best ? 'a' : 'muted' });
       });
-      items.push({ k: 'hm', t: 'text', x: 600, y: rowY(1.5) - 8, text: t({ en: 'weighted mix = context', zh: '加權混合 = 上下文' }), size: 14, tone: 'a', bold: true });
-      items.push({ k: 'mix', t: 'vec', x: 600, y: rowY(1.5) + 11, v: mixed });
+      items.push({ k: 'hm', t: 'text', x: 600, y: rowY(F / 2) - 8, text: t({ en: 'weighted mix = context', zh: '加權混合 = 上下文' }), size: 14, tone: 'a', bold: true });
+      items.push({ k: 'mix', t: 'vec', x: 600, y: rowY(F / 2) + 11, v: mixed });
     }
 
     if (step === 8) {
-      items.push({ k: 'p1', t: 'bars', x: 190, y: 62, w: 520, h: 170, items: afterFirstM, title: t({ en: 'model’s prediction after “.em” (first m)', zh: '模型在「.em」之後的預測（第一個 m）' }) });
-      items.push({ k: 'p2', t: 'bars', x: 190, y: 300, w: 520, h: 170, items: afterSecondM, title: t({ en: 'model’s prediction after “.emm” (second m)', zh: '模型在「.emm」之後的預測（第二個 m）' }) });
+      items.push({ k: 'p1', t: 'bars', x: 190, y: 62, w: 520, h: 170, items: afterFirstM, title: t({ en: 'model’s prediction after “.jim” (first m)', zh: '模型在「.jim」之後的預測（第一個 m）' }) });
+      items.push({ k: 'p2', t: 'bars', x: 190, y: 300, w: 520, h: 170, items: afterSecondM, title: t({ en: 'model’s prediction after “.jimm” (second m)', zh: '模型在「.jimm」之後的預測（第二個 m）' }) });
     }
 
     if (step === 9) {
@@ -244,7 +244,7 @@ export const attention: Lesson = {
 
     return {
       metrics: [
-        { label: { en: 'Tokens in view', zh: '可見詞元' }, value: '4' },
+        { label: { en: 'Tokens in view', zh: '可見詞元' }, value: String(IDS.length) },
         { label: { en: 'Following', zh: '追蹤對象' }, value: step >= 2 ? t({ en: 'second “m”', zh: '第二個「m」' }) : '—' },
         { label: { en: 'Strongest attention', zh: '最強的注意力' }, value: step >= 6 ? `“${LABELS[best]}” ${pct(att[F][best])}` : '—' },
         { label: { en: 'Top prediction', zh: '最可能的下一個' }, value: step >= 8 ? `“${afterSecondM[0].label}” ${pct(afterSecondM[0].v)}` : '—' },

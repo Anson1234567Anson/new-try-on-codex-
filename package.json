@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "train": "tsx scripts/train.ts"
+    "train": "tsx scripts/train.ts",
+    "experiments": "tsx scripts/experiments.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

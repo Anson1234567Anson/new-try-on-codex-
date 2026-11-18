@@ -2,12 +2,12 @@ import type { Lesson } from './types';
 import type { Item } from '../engine/scene';
 import { t } from '../i18n';
 import { GPT, DEFAULT_CONFIG, sgdStep } from '../model/gpt';
-import { CHARS, NAMES, example, rng } from '../model/data';
+import { CHARS, TRAIN_NAMES, VAL_NAMES, example, rng } from '../model/data';
 
 // This lesson really trains the model in the browser, starting from random weights.
 
-const ALL = NAMES.map(example);
-const EVAL = ALL.filter((_, i) => i % 5 === 0); // fixed set used to measure the loss
+const ALL = TRAIN_NAMES.map(example);
+const EVAL = VAL_NAMES.slice(0, 150).map(example); // fixed held-out names used to measure the loss
 const BATCH = 16;
 const EVERY = 10; // measure the loss every 10 iterations
 const UNIFORM = Math.log(27);
@@ -171,7 +171,7 @@ export const training: Lesson = {
       body: [
         { en: '<b>Loss</b>: one number for how wrong the model is.<br><b>Gradient</b>: which way each weight should move.<br><b>Update</b>: move a little, by the learning rate.<br><b>Loop</b>: repeat on a fresh batch, thousands of times.', zh: '<b>損失</b>：用一個數字表示模型錯得多離譜。<br><b>梯度</b>：每個權重該往哪邊動。<br><b>更新</b>：依學習率移動一點點。<br><b>迴圈</b>：換一個新批次再來一次，重複數千次。' },
       ],
-      callout: { kind: 'next', text: { en: 'Next: Learning Rate and Warmup. Why real training starts slow, speeds up, then slows down again.', zh: '下一課：學習率與暖身。為什麼真實的訓練要先慢、再快、最後又放慢。' } },
+      callout: { kind: 'next', text: { en: 'Next: Gradients and Backpropagation. How the model works out a gradient for every weight in one backward pass.', zh: '下一課：梯度與反向傳播。模型如何只靠一次反向計算，就求出每個權重的梯度。' } },
     },
   ],
 
