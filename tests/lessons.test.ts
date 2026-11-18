@@ -52,6 +52,27 @@ describe('lessons', () => {
           setLang('en');
         });
       }
+
+      it('draws every step at the edges of its controls', () => {
+        lesson.steps.forEach((_, i) => {
+          const controls = lesson.scene(i, {}).controls ?? [];
+          if (!controls.length) return;
+          const base = Object.fromEntries(controls.map((c) => [c.key, c.value]));
+          const variants: Record<string, number | string | boolean>[] = [base];
+          for (const c of controls) {
+            if (c.kind === 'slider') variants.push({ ...base, [c.key]: c.min }, { ...base, [c.key]: c.max });
+            if (c.kind === 'toggle') variants.push({ ...base, [c.key]: !c.value });
+            if (c.kind === 'choice') for (const o of c.options) variants.push({ ...base, [c.key]: o.value });
+            if (c.kind === 'text') for (const v of ['', 'a', 'zzzzzzz', 'anna']) variants.push({ ...base, [c.key]: v.slice(0, c.maxLength ?? 99) });
+          }
+          for (const v of variants) {
+            const sc = lesson.scene(i, v);
+            const keys = sc.items.map((it) => it.k);
+            expect(new Set(keys).size, `step ${i + 1} ${JSON.stringify(v)}: unique keys`).toBe(keys.length);
+            expect(JSON.stringify(sc), `step ${i + 1} ${JSON.stringify(v)}`).not.toMatch(/undefined|\[object Object\]/);
+          }
+        });
+      });
     });
   }
 });

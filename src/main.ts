@@ -1,6 +1,7 @@
 import './style.css';
 import { UI, fill, getLang, setLang, t, type Lang } from './i18n';
 import { BUILT_ORDER, LESSONS, MODULES, TOTAL } from './course';
+import type { Control, Input } from './lessons/types';
 import { Stage } from './engine/scene';
 
 // ---------- saved state ----------
@@ -44,6 +45,7 @@ app.innerHTML = `
           <div class="metrics" id="metrics"></div>
           <div class="stage__btns" id="btns"></div>
         </div>
+        <div class="controls" id="controls" hidden></div>
         <div class="stage__scroll"><svg id="svg" class="stage__svg" role="img"></svg></div>
         <div class="stage__foot"><div class="legend" id="legend"></div><div class="real" id="real"></div></div>
       </section>
@@ -94,8 +96,53 @@ function renderHead(): void {
     <p class="blurb">${t(l.blurb)}</p>`;
 }
 
+// control values the learner has set, per lesson step ("lesson/step/key")
+const inputs = new Map<string, number | string | boolean>();
+const inputFor = (controls: Control[] | undefined): Input => {
+  const out: Input = {};
+  for (const c of controls ?? []) out[c.key] = inputs.get(`${lessonId}/${step}/${c.key}`) ?? c.value;
+  return out;
+};
+let controlsSig = '';
+
+function renderControls(controls: Control[] | undefined, input: Input): void {
+  const box = $('controls');
+  const sig = `${lessonId}/${step}/${getLang()}/` + (controls ?? []).map((c) => c.key + c.kind).join(',');
+  if (!controls?.length) { box.hidden = true; box.innerHTML = ''; controlsSig = sig; return; }
+  box.hidden = false;
+  if (sig !== controlsSig) {
+    // build the controls once per step, so typing and dragging are not interrupted
+    controlsSig = sig;
+    box.innerHTML = controls.map((c) => {
+      const id = `ctl-${c.key}`;
+      const label = `<label for="${id}">${t(c.label)}</label>`;
+      if (c.kind === 'slider') return `<div class="ctl ctl--slider">${label}<input id="${id}" data-key="${c.key}" type="range" min="${c.min}" max="${c.max}" step="${c.step}" value="${input[c.key]}"><output id="${id}-out"></output></div>`;
+      if (c.kind === 'text') return `<div class="ctl ctl--text">${label}<input id="${id}" data-key="${c.key}" type="text" autocomplete="off" spellcheck="false" ${c.maxLength ? `maxlength="${c.maxLength}"` : ''} placeholder="${c.placeholder ? t(c.placeholder) : ''}" value="${String(input[c.key])}"></div>`;
+      if (c.kind === 'toggle') return `<div class="ctl ctl--toggle"><input id="${id}" data-key="${c.key}" type="checkbox" ${input[c.key] ? 'checked' : ''}>${label}</div>`;
+      return `<div class="ctl ctl--choice">${label}<div class="seg">${c.options.map((o) => `<button type="button" data-key="${c.key}" data-value="${o.value}">${t(o.label)}</button>`).join('')}</div></div>`;
+    }).join('');
+  }
+  for (const c of controls) {
+    if (c.kind === 'slider') {
+      const out = document.getElementById(`ctl-${c.key}-out`);
+      if (out) out.textContent = c.format ? c.format(input[c.key] as number) : String(input[c.key]);
+    }
+    if (c.kind === 'choice') box.querySelectorAll<HTMLButtonElement>(`[data-key="${c.key}"]`).forEach((b) => b.classList.toggle('is-on', b.dataset.value === input[c.key]));
+  }
+}
+
+function setInput(key: string, value: number | string | boolean): void {
+  inputs.set(`${lessonId}/${step}/${key}`, value);
+  renderScene();
+}
+
 function renderScene(): void {
-  const sc = lesson().scene(step);
+  const l = lesson();
+  // first pass learns which controls this step has, second pass draws with their values
+  const probe = l.scene(step, {});
+  const input = inputFor(probe.controls);
+  const sc = probe.controls?.length ? l.scene(step, input) : probe;
+  renderControls(sc.controls, input);
   $('metrics').innerHTML = sc.metrics.map((m) => `<div class="metric"><span>${t(m.label)}</span><b>${m.value}</b></div>`).join('');
   $('legend').innerHTML = (sc.legend ?? []).map((g) => `<span><i class="lg lg--${g.tone}"></i>${t(g.text)}</span>`).join('');
   stage.render(sc.items);
@@ -214,8 +261,30 @@ document.addEventListener('click', (e) => {
   }
 });
 
+$('controls').addEventListener('input', (e) => {
+  const el = e.target as HTMLInputElement;
+  const key = el.dataset.key;
+  if (!key) return;
+  if (el.type === 'range') setInput(key, parseFloat(el.value));
+  else if (el.type === 'checkbox') setInput(key, el.checked);
+  else {
+    const c = lesson().scene(step, {}).controls?.find((x) => x.key === key);
+    let v = el.value;
+    if (c && c.kind === 'text' && c.pattern) v = v.replace(new RegExp(`[^${c.pattern}]`, 'g'), '');
+    if (v !== el.value) el.value = v;
+    setInput(key, v);
+  }
+});
+$('controls').addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-key]');
+  if (b?.dataset.key && b.dataset.value !== undefined) setInput(b.dataset.key, b.dataset.value);
+});
+
 document.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // typing in a control must not step the lesson
+  const tag = (e.target as HTMLElement).tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
   if (e.key === 'ArrowRight') go(1);
   else if (e.key === 'ArrowLeft') go(-1);
   else if (e.key === 'r' || e.key === 'R') replay();

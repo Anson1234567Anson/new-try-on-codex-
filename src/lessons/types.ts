@@ -12,10 +12,24 @@ export interface Step {
   changed?: { sign: '+' | '~'; text: L }[];
 }
 
+/**
+ * A control the learner can change on this step. Its current value is passed
+ * back to `scene(step, input)` as `input[key]`, and the diagram redraws live.
+ */
+export type Control =
+  | { key: string; kind: 'slider'; label: L; min: number; max: number; step: number; value: number; format?: (v: number) => string }
+  | { key: string; kind: 'text'; label: L; value: string; maxLength?: number; pattern?: string; placeholder?: L }
+  | { key: string; kind: 'toggle'; label: L; value: boolean }
+  | { key: string; kind: 'choice'; label: L; options: { value: string; label: L }[]; value: string };
+
+export type Input = Record<string, number | string | boolean>;
+
 export interface Scene {
   metrics: { label: L; value: string }[];
   items: Item[];
   legend?: { tone: 'pos' | 'neg' | 'heat' | 'a' | 'b' | 'bad'; text: L }[];
+  /** Optional controls for this step. `value` is the starting value; the learner's changes are kept while they stay on the lesson. */
+  controls?: Control[];
 }
 
 export interface Lesson {
@@ -26,7 +40,8 @@ export interface Lesson {
   level: 'beginner' | 'intermediate';
   learn: { text: L; step: number }[]; // ticked once the learner reaches `step` (0-based)
   steps: Step[];
-  scene(step: number): Scene;
+  /** `input` holds the learner's current control values (empty until they touch a control). */
+  scene(step: number, input?: Input): Scene;
   /** For lessons that compute over time: advance a little; return true while there is more to do. */
   tick?(step: number): boolean;
   /** Start the current step's computation again from scratch. */
