@@ -171,7 +171,7 @@ export const attention: Lesson = {
       });
 
     if (step === 0) {
-      items.push({ k: 'next', t: 'token', x: 300 + 4 * 62, y: 50, text: '?', tone: 'a' });
+      items.push({ k: 'next', t: 'token', x: 300 + IDS.length * 62, y: 50, text: '?', tone: 'a' });
       items.push({ k: 'data', t: 'bars', x: 200, y: 190, w: 500, h: 230, items: afterAnyM, title: t({ en: 'what follows “m” across all names in the list', zh: '在清單的所有名字裡，「m」後面接的字母' }) });
     }
 
