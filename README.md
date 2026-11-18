@@ -48,3 +48,10 @@ by Alessandro Minoccheri (MIT licence, see `THIRD_PARTY_NOTICES.md`), lower-case
 2. Give every string both `en` and `zh`.
 3. Use the id listed for it in `MODULES` in `src/course.ts`; it is picked up automatically.
 4. Run `npm test`, then `node scripts/walk.cjs http://localhost:5173/ <id> <folder>` with the dev server running to screenshot every step.
+
+## If you retrain
+
+Most numbers in the lessons are computed when the page runs, but some lesson text quotes
+results directly (for example the byte-pair merge counts, the fine-tuning results and the
+compute totals). If you re-run `npm run train` or `npm run experiments`, walk the lessons
+again and update any text that no longer matches the diagrams.
