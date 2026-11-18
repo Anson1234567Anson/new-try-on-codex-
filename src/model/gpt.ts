@@ -6,7 +6,7 @@
 
 import {
   Mat, add, addRow, backward, causalSoftmax, concatCols, crossEntropy,
-  gather, layerNorm, matmul, relu, scale, softmaxRow, transpose,
+  gather, gateRows, layerNorm, matmul, relu, scale, softmaxRow, softmaxRows, transpose,
 } from './tensor';
 import { gaussian } from './data';
 
@@ -19,11 +19,18 @@ export interface Config {
   layers?: number; // transformer blocks stacked on top of each other (default 1)
   norm?: boolean; // layer normalization before attention, MLP and output (default off)
   noPos?: boolean; // leave out position embeddings (for experiments only)
+  experts?: number; // mixture of experts: this many MLPs per block instead of one (default: one plain MLP)
+  topK?: number; // with experts: how many experts each token is sent to (default 1)
+  balance?: number; // with experts: weight of the load-balancing loss (default 0.01; 0 turns it off)
 }
 
 export interface BlockTrace {
   ln1?: Mat; q: Mat[]; k: Mat[]; v: Mat[]; scores: Mat[]; att: Mat[]; mixed: Mat[];
   attOut: Mat; x1: Mat; ln2?: Mat; hidden: Mat; mlpOut: Mat; x2: Mat;
+  /** Mixture of experts only: router probabilities (tokens × experts), each token's chosen experts, and each expert's hidden layer. */
+  router?: Mat; chosen?: number[][]; expertHidden?: Mat[];
+  /** Mixture of experts only: the load-balancing loss for this block (1×1). */
+  balanceLoss?: Mat;
 }
 
 /** Layer 0's fields are copied to the top level; `blocks` holds every layer. */
@@ -64,10 +71,22 @@ export class GPT {
       }
       this.p['o' + s] = init(d, d, 1 / Math.sqrt(d));
       if (cfg.norm) { this.p['g2' + s] = ones(d); this.p['c2' + s] = new Mat(1, d); }
-      this.p['w1' + s] = init(d, hidden, 1 / Math.sqrt(d));
-      this.p['b1' + s] = new Mat(1, hidden);
-      this.p['w2' + s] = init(hidden, d, 1 / Math.sqrt(hidden));
-      this.p['b2' + s] = new Mat(1, d);
+      if (cfg.experts) {
+        // expert e of layer l: w1_e{e}, b1_e{e}, w2_e{e}, b2_e{e} (plus the layer suffix), and one router matrix
+        this.p['router' + s] = init(d, cfg.experts, 0.1 / Math.sqrt(d));
+        for (let e = 0; e < cfg.experts; e++) {
+          const x = '_e' + e + s;
+          this.p['w1' + x] = init(d, hidden, 1 / Math.sqrt(d));
+          this.p['b1' + x] = new Mat(1, hidden);
+          this.p['w2' + x] = init(hidden, d, 1 / Math.sqrt(hidden));
+          this.p['b2' + x] = new Mat(1, d);
+        }
+      } else {
+        this.p['w1' + s] = init(d, hidden, 1 / Math.sqrt(d));
+        this.p['b1' + s] = new Mat(1, hidden);
+        this.p['w2' + s] = init(hidden, d, 1 / Math.sqrt(hidden));
+        this.p['b2' + s] = new Mat(1, d);
+      }
     }
     if (cfg.norm) { this.p.gf = ones(d); this.p.cf = new Mat(1, d); }
     this.p.u = init(d, vocab, 1 / Math.sqrt(d));
@@ -127,7 +146,15 @@ export class GPT {
       const attOut = matmul(mixed.length === 1 ? mixed[0] : concatCols(mixed), this.w('o' + s));
       const x1 = add(h, attOut);
       const ln2 = this.cfg.norm ? layerNorm(x1, P['g2' + s], P['c2' + s]) : undefined;
-      const hidden = relu(addRow(matmul(ln2 ?? x1, this.w('w1' + s)), P['b1' + s]));
+      const inM = ln2 ?? x1;
+      if (this.cfg.experts) {
+        const moe = this.moe(inM, s);
+        const x2 = add(x1, moe.out);
+        blocks.push({ ln1, q, k, v, scores, att, mixed, attOut, x1, ln2, hidden: moe.expertHidden[0], mlpOut: moe.out, x2, router: moe.router, chosen: moe.chosen, expertHidden: moe.expertHidden, balanceLoss: moe.balance });
+        h = x2;
+        continue;
+      }
+      const hidden = relu(addRow(matmul(inM, this.w('w1' + s)), P['b1' + s]));
       const mlpOut = addRow(matmul(hidden, this.w('w2' + s)), P['b2' + s]);
       const x2 = add(x1, mlpOut);
       blocks.push({ ln1, q, k, v, scores, att, mixed, attOut, x1, ln2, hidden, mlpOut, x2 });
@@ -136,6 +163,40 @@ export class GPT {
     const final = this.cfg.norm ? layerNorm(h, P.gf, P.cf) : h;
     const logits = addRow(matmul(final, this.w('u')), P.bu);
     return { ...blocks[0], x2: h, tokEmb, posEmb, x, blocks, final, logits };
+  }
+
+  /**
+   * Mixture of experts: the router gives each token a probability for every
+   * expert; the token goes to its top-k experts, and their outputs are added up,
+   * each weighted by its router probability. For clarity every expert is computed
+   * for every token here and the unchosen results are multiplied by zero; a real
+   * system only computes the chosen ones, which gives the same answer.
+   */
+  private moe(x: Mat, s: string): { out: Mat; router: Mat; chosen: number[][]; expertHidden: Mat[]; balance: Mat } {
+    const E = this.cfg.experts!, K = this.cfg.topK ?? 1, P = this.p;
+    const router = softmaxRows(matmul(x, this.w('router' + s)));
+    const chosen: number[][] = [];
+    for (let i = 0; i < x.r; i++) {
+      const row = router.row(i).map((v, e) => [v, e] as const).sort((a, b) => b[0] - a[0]);
+      chosen.push(row.slice(0, K).map(([, e]) => e));
+    }
+    let out: Mat | null = null;
+    const expertHidden: Mat[] = [];
+    for (let e = 0; e < E; e++) {
+      const x_ = '_e' + e + s;
+      const hid = relu(addRow(matmul(x, this.w('w1' + x_)), P['b1' + x_]));
+      expertHidden.push(hid);
+      const y = addRow(matmul(hid, this.w('w2' + x_)), P['b2' + x_]);
+      const gated = gateRows(y, router, e, chosen.map((c) => (c.includes(e) ? 1 : 0)));
+      out = out ? add(out, gated) : gated;
+    }
+    // Load-balancing loss (as in the Switch Transformer): experts × Σ (share of tokens sent to e) × (average router probability for e).
+    // It is smallest when tokens and probability are spread evenly over the experts.
+    const share = new Mat(E, 1);
+    for (const c of chosen) for (const e of c) share.d[e] += 1 / (x.r * K);
+    const ones = new Mat(1, x.r); ones.d.fill(1 / x.r);
+    const balance = scale(matmul(matmul(ones, router), share), E);
+    return { out: out!, router, chosen, expertHidden, balance };
   }
 
   /** Probabilities for the token that follows the last one in `ids`. */
@@ -148,10 +209,15 @@ export class GPT {
   loss(batch: { x: number[]; y: number[] }[], train = false): number {
     if (train) this.zeroGrad();
     let total = 0;
+    const alpha = this.cfg.experts ? this.cfg.balance ?? 0.01 : 0;
     for (const ex of batch) {
-      const l = crossEntropy(this.forward(ex.x).logits, ex.y);
-      total += l.d[0];
-      if (train) backward(l, 1 / batch.length);
+      const tr = this.forward(ex.x);
+      let l = crossEntropy(tr.logits, ex.y);
+      total += l.d[0]; // the reported loss is the prediction loss only
+      if (train) {
+        if (alpha) for (const b of tr.blocks) if (b.balanceLoss) l = add(l, scale(b.balanceLoss, alpha));
+        backward(l, 1 / batch.length);
+      }
     }
     return total / batch.length;
   }

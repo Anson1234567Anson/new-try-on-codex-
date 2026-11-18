@@ -21,8 +21,10 @@ interface RunOpts {
   cfg?: Partial<Config>; steps: number; batch?: number; every?: number;
   opt?: 'adam' | 'sgd'; lr: number | ((step: number) => number); data?: Ex[]; val?: Ex[];
   seed?: number; model?: GPT; samplesAt?: number[]; log?: boolean;
+  /** extra measurement recorded at every log point */
+  extra?: (m: GPT) => unknown;
 }
-interface RunLog { every: number; train: (number | null)[]; val: (number | null)[]; lr: number[]; gradNorm: number[]; samples: Record<string, string[]>; seconds: number }
+interface RunLog { every: number; train: (number | null)[]; val: (number | null)[]; lr: number[]; gradNorm: number[]; samples: Record<string, string[]>; seconds: number; extra?: unknown[] }
 
 const writeNames = (m: GPT, n = 8) => { const r = rng(5); return Array.from({ length: n }, () => m.sample(r) || '·'); };
 
@@ -34,6 +36,7 @@ function run(o: RunOpts): { model: GPT; log: RunLog } {
   const lrAt = (s: number) => (typeof o.lr === 'number' ? o.lr : o.lr(s));
   const log: RunLog = { every, train: [r3(model.loss(data))], val: [r3(model.loss(val))], lr: [lrAt(0)], gradNorm: [], samples: {}, seconds: 0 };
   if (o.samplesAt?.includes(0)) log.samples[0] = writeNames(model);
+  if (o.extra) log.extra = [o.extra(model)];
   const t0 = Date.now();
   let acc = 0, gacc = 0;
   for (let s = 1; s <= o.steps; s++) {
@@ -44,6 +47,7 @@ function run(o: RunOpts): { model: GPT; log: RunLog } {
     if (s % every === 0) {
       log.train.push(r3(acc / every)); log.gradNorm.push(r3(gacc / every)!); acc = 0; gacc = 0;
       log.val.push(r3(model.loss(val))); log.lr.push(+lrAt(s).toPrecision(3));
+      if (o.extra) log.extra!.push(o.extra(model));
     }
     if (o.samplesAt?.includes(s)) log.samples[s] = writeNames(model);
   }
@@ -121,6 +125,35 @@ out.finetune = {
   scratch: { ...scratch.log, endsA: endsA(scratch.model) },
   allNamesEndsA: +(NAMES.filter((n) => n.endsWith('a')).length / NAMES.length).toFixed(3),
 };
+}
+
+if (want('moe')) {
+  console.log('mixture of experts');
+  const STEPS = 1500;
+  const lr = (s: number) => warmupCosine(s, STEPS, 0.01, 100);
+  // share of held-out tokens (in %) sent to each expert, measured on 200 held-out names
+  const usage = (m: GPT) => {
+    const c = new Array(m.cfg.experts ?? 0).fill(0); let n = 0;
+    for (const ex of VAL.slice(0, 200)) for (const ch of m.forward(ex.x).blocks[0].chosen ?? []) for (const e of ch) { c[e]++; n++; }
+    return c.map((v) => +(100 * v / n).toFixed(1));
+  };
+  const moe = (cfg: Partial<Config>) => run({ steps: STEPS, lr, cfg, extra: cfg.experts ? usage : undefined });
+  const dense = moe({});
+  const m4 = moe({ experts: 4, balance: 0.01 });
+  const noBal = moe({ experts: 4, balance: 0 });
+  const top2 = moe({ experts: 4, topK: 2, balance: 0.01 });
+  const m8 = moe({ experts: 8, balance: 0.01 });
+  out.moe = {
+    steps: STEPS, peakLr: 0.01, warmup: 100, batch: 32, usageEvery: 25, usageNames: 200,
+    dense: { ...dense.log, params: dense.model.paramCount() },
+    experts4: { ...m4.log, params: m4.model.paramCount() },
+    noBalance: { ...noBal.log, params: noBal.model.paramCount() },
+    top2: { ...top2.log, params: top2.model.paramCount() },
+    experts8: { ...m8.log, params: m8.model.paramCount() },
+  };
+  // the 4-expert model is shipped so lessons can inspect its router
+  writeFileSync(new URL('../src/model/weights-moe.json', import.meta.url), JSON.stringify(m4.model.toJSON()));
+  writeFileSync(new URL('../src/model/weights-moe-nobalance.json', import.meta.url), JSON.stringify(noBal.model.toJSON()));
 }
 
 if (want('heads2')) {

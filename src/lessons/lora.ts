@@ -139,7 +139,7 @@ export const lora: Lesson = {
       body: [
         { en: `<b>Freeze</b> W, learn ΔW = <b>A · B</b> with a small rank r.<br><b>B starts at 0</b>: training begins from the pretrained model.<br><b>Our model</b>: 534 trainable vs 3,115; best loss ${best(FT.lora.val).toFixed(2)} vs ${best(FT.full.val).toFixed(2)}.<br><b>At scale</b>: ${BIG} × ${BIG} with rank ${BIG_R} is ${(100 * BIG_R * 2 * BIG / (BIG * BIG)).toFixed(2)}% of the weights; one base, many adapters.`, zh: `<b>凍結</b> W，用小的秩 r 學 ΔW = <b>A · B</b>。<br><b>B 從 0 開始</b>：訓練從預訓練模型出發。<br><b>我們的模型</b>：要訓練的 534 個對 3,115 個；最佳損失 ${best(FT.lora.val).toFixed(2)} 對 ${best(FT.full.val).toFixed(2)}。<br><b>大規模時</b>：${BIG} × ${BIG}、秩 ${BIG_R} 只佔權重的 ${(100 * BIG_R * 2 * BIG / (BIG * BIG)).toFixed(2)}%；一個基礎模型，許多外掛。` },
       ],
-      callout: { kind: 'next', text: { en: 'Next: Build a Tiny GPT. Put every piece from this course together into one working model.', zh: '下一課：打造一個迷你 GPT。把這門課的每個零件組合成一個能運作的模型。' } },
+      callout: { kind: 'next', text: { en: 'Next: Training Mixture-of-Experts Models. Keeping many experts busy, balanced and spread across machines.', zh: '下一課：訓練混合專家模型。如何讓許多專家都有事做、分工平均，並分散到多台機器上。' } },
     },
   ],
 

@@ -240,3 +240,51 @@ export function layerNorm(a: Mat, gain: Mat, bias: Mat, eps = 1e-5): Mat {
   };
   return o;
 }
+
+/** Softmax over each whole row (no mask). Used by the mixture-of-experts router. */
+export function softmaxRows(a: Mat): Mat {
+  const { r, c } = a;
+  const o = node(r, c, [a]);
+  for (let i = 0; i < r; i++) {
+    let m = -Infinity;
+    for (let j = 0; j < c; j++) m = Math.max(m, a.d[i * c + j]);
+    let z = 0;
+    for (let j = 0; j < c; j++) z += o.d[i * c + j] = Math.exp(a.d[i * c + j] - m);
+    for (let j = 0; j < c; j++) o.d[i * c + j] /= z;
+  }
+  o.back = () => {
+    for (let i = 0; i < r; i++) {
+      let dot = 0;
+      for (let j = 0; j < c; j++) dot += o.g[i * c + j] * o.d[i * c + j];
+      for (let j = 0; j < c; j++) a.g[i * c + j] += o.d[i * c + j] * (o.g[i * c + j] - dot);
+    }
+  };
+  return o;
+}
+
+/**
+ * Multiply each row i of `a` by w[i][col] × mask[i] (mask is a fixed 0/1 list).
+ * Used to weight one expert's output by its router probability, only for the
+ * tokens that were sent to that expert.
+ */
+export function gateRows(a: Mat, w: Mat, col: number, mask: number[]): Mat {
+  const { r, c } = a;
+  const o = node(r, c, [a, w]);
+  for (let i = 0; i < r; i++) {
+    const s = mask[i] ? w.d[i * w.c + col] : 0;
+    for (let j = 0; j < c; j++) o.d[i * c + j] = a.d[i * c + j] * s;
+  }
+  o.back = () => {
+    for (let i = 0; i < r; i++) {
+      if (!mask[i]) continue;
+      const s = w.d[i * w.c + col];
+      let gs = 0;
+      for (let j = 0; j < c; j++) {
+        a.g[i * c + j] += o.g[i * c + j] * s;
+        gs += o.g[i * c + j] * a.d[i * c + j];
+      }
+      w.g[i * w.c + col] += gs;
+    }
+  };
+  return o;
+}
