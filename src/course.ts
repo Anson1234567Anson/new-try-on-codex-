@@ -1,15 +1,14 @@
 import type { L } from './i18n';
 import type { Lesson } from './lessons/types';
-import { tokens } from './lessons/tokens';
-import { attention } from './lessons/attention';
-import { training } from './lessons/training';
+// Every file in src/lessons/ that exports a Lesson is picked up automatically.
+const found = import.meta.glob<Record<string, unknown>>('./lessons/*.ts', { eager: true });
 
-/** Lessons that are written. Everything else in the outline is planned. */
-export const LESSONS: Record<string, Lesson> = {
-  [tokens.id]: tokens,
-  [attention.id]: attention,
-  [training.id]: training,
-};
+const isLesson = (v: unknown): v is Lesson =>
+  typeof v === 'object' && v !== null && 'steps' in v && 'scene' in v && 'id' in v;
+
+/** Lessons that are written, by id. Anything else in the outline is shown as "soon". */
+export const LESSONS: Record<string, Lesson> = {};
+for (const mod of Object.values(found)) for (const v of Object.values(mod)) if (isLesson(v)) LESSONS[v.id] = v;
 
 export interface Module { title: L; lessons: { id: string; title: L }[] }
 

@@ -199,3 +199,44 @@ export function backward(loss: Mat, seed = 1): void {
   loss.g[0] = seed;
   for (let i = order.length - 1; i >= 0; i--) order[i].back?.();
 }
+
+/**
+ * Layer normalization of each row: subtract the row's mean, divide by its
+ * standard deviation, then scale by `gain` and shift by `bias` (both 1×c).
+ */
+export function layerNorm(a: Mat, gain: Mat, bias: Mat, eps = 1e-5): Mat {
+  const { r, c } = a;
+  const o = node(r, c, [a, gain, bias]);
+  const xhat = new Float64Array(r * c);
+  const inv = new Float64Array(r);
+  for (let i = 0; i < r; i++) {
+    let mean = 0;
+    for (let j = 0; j < c; j++) mean += a.d[i * c + j];
+    mean /= c;
+    let v = 0;
+    for (let j = 0; j < c; j++) v += (a.d[i * c + j] - mean) ** 2;
+    inv[i] = 1 / Math.sqrt(v / c + eps);
+    for (let j = 0; j < c; j++) {
+      xhat[i * c + j] = (a.d[i * c + j] - mean) * inv[i];
+      o.d[i * c + j] = xhat[i * c + j] * gain.d[j] + bias.d[j];
+    }
+  }
+  o.back = () => {
+    for (let i = 0; i < r; i++) {
+      let sg = 0, sgx = 0;
+      for (let j = 0; j < c; j++) {
+        const g = o.g[i * c + j];
+        gain.g[j] += g * xhat[i * c + j];
+        bias.g[j] += g;
+        const dx = g * gain.d[j];
+        sg += dx;
+        sgx += dx * xhat[i * c + j];
+      }
+      for (let j = 0; j < c; j++) {
+        const dx = o.g[i * c + j] * gain.d[j];
+        a.g[i * c + j] += (inv[i] / c) * (c * dx - sg - xhat[i * c + j] * sgx);
+      }
+    }
+  };
+  return o;
+}

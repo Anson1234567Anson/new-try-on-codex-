@@ -18,8 +18,11 @@ describe('data', () => {
 
 describe('model', () => {
   it('backprop matches a numerical gradient for every kind of weight', () => {
-    for (const heads of [1, 2]) {
-      const model = new GPT({ ...DEFAULT_CONFIG, heads }, rng(7));
+    const variants = [
+      { heads: 1 }, { heads: 2 }, { layers: 2, norm: true }, { noPos: true },
+    ];
+    for (const v of variants) {
+      const model = new GPT({ ...DEFAULT_CONFIG, ...v }, rng(7));
       const batch = ['emma', 'noah', 'olivia'].map(example);
       model.loss(batch, true);
       const rand = rng(3);
@@ -32,10 +35,28 @@ describe('model', () => {
           m.d[i] = keep - eps; const down = model.loss(batch);
           m.d[i] = keep;
           const numeric = (up - down) / (2 * eps);
-          expect(Math.abs(analytic - numeric), `${name}[${i}] heads=${heads}`).toBeLessThan(1e-6);
+          expect(Math.abs(analytic - numeric), `${name}[${i}] ${JSON.stringify(v)}`).toBeLessThan(1e-6);
         }
       }
     }
+  });
+
+  it('LoRA gradients match a numerical gradient, and only adapters train', () => {
+    const model = new GPT(DEFAULT_CONFIG, rng(7));
+    model.addLoRA(['q0', 'u'], 2, rng(9));
+    for (const ad of Object.values(model.lora)) for (let i = 0; i < ad.B.d.length; i++) ad.B.d[i] = 0.1 * Math.sin(i);
+    const batch = ['emma', 'noah'].map(example);
+    model.loss(batch, true);
+    expect(model.params().length).toBe(4);
+    for (const ad of Object.values(model.lora))
+      for (const m of [ad.A, ad.B])
+        for (let i = 0; i < m.d.length; i += 3) {
+          const keep = m.d[i], eps = 1e-5;
+          m.d[i] = keep + eps; const up = model.loss(batch);
+          m.d[i] = keep - eps; const down = model.loss(batch);
+          m.d[i] = keep;
+          expect(Math.abs(m.g[i] - (up - down) / (2 * eps))).toBeLessThan(1e-6);
+        }
   });
 
   it('an untrained model is about as wrong as a uniform guess', () => {
