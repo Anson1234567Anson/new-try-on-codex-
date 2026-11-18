@@ -13,17 +13,19 @@ const WORD = '.olivia';
 const LABELS = [...WORD];
 const F = LABELS.length - 1;
 const VOWELS = new Set([...'aeiouy']);
-const NA = 22; // a neuron that fires on a consonant at the start of a name
+const NA = 22; // a neuron that fires mostly on the first letter, mostly consonants
+const FIRE = 0.5; // a neuron "fires" when its activation is above this
 const NB = 2; // a neuron that fires on a vowel late in a longer name
 const ROWS = ['.quinn', '.peter', '.olivia'];
 
 // A text whose numbers are computed only when it is first shown.
 const lz = (f: () => L): L => ({ get en() { return f().en; }, get zh() { return f().zh; } });
+const q = (s: string) => t({ en: `“${s}”`, zh: `「${s}」` });
 const row = (v: number[]) => { const m = new Mat(1, v.length); m.d.set(v); return m; };
 
 interface Data {
   model: GPT; x1: number[]; pre: number[]; hidden: number[]; out: number[];
-  active: number; withMlp: number[]; noMlp: number[]; lossWith: number; lossWithout: number;
+  active: number; aboveZero: number; withMlp: number[]; noMlp: number[]; lossWith: number; lossWithout: number;
   counts: { tok: number; att: number; mlp: number; out: number; all: number };
   acts: number[][][]; // [row name][neuron A/B][position]
 }
@@ -51,18 +53,18 @@ const data = (): Data => cache ??= (() => {
   const counts = { tok: c(['tok', 'pos']), att: c(['q0', 'k0', 'v0', 'o']), mlp: c(['w1', 'b1', 'w2', 'b2']), out: c(['u', 'bu']), all: model.paramCount() };
   const acts = ROWS.map((w) => { const h = model.forward(encode(w)).hidden; return [NA, NB].map((j) => [...w].map((_, i) => h.d[i * h.c + j])); });
   return {
-    model, x1, pre, hidden, out: tr.mlpOut.row(F), active: hidden.filter((v) => v > 0).length,
+    model, x1, pre, hidden, out: tr.mlpOut.row(F), active: hidden.filter((v) => v > FIRE).length, aboveZero: hidden.filter((v) => v > 0).length,
     withMlp: softmaxRow(tr.logits.row(F)), noMlp: softmaxRow(logits(x1)),
     lossWith: lw / n, lossWithout: lo / n, counts, acts,
   };
 })();
 
 // How the two neurons behave over every position of every name in the list.
-interface Stats { fires: number; total: number; consFire: number; consAll: number; vowNextFire: number; vowNextAll: number; endFire: number; endAll: number; lateFire: number; lateAll: number }
+interface Stats { fires: number; total: number; firstFire: number; firstAll: number; consFire: number; consAll: number; vowNextFire: number; vowNextAll: number; endFire: number; endAll: number; lateFire: number; lateAll: number }
 let statCache: Stats[] | undefined;
 const stats = (): Stats[] => statCache ??= (() => {
   const { model } = data();
-  const s = [NA, NB].map(() => ({ fires: 0, total: 0, consFire: 0, consAll: 0, vowNextFire: 0, vowNextAll: 0, endFire: 0, endAll: 0, lateFire: 0, lateAll: 0 }));
+  const s = [NA, NB].map(() => ({ fires: 0, total: 0, firstFire: 0, firstAll: 0, consFire: 0, consAll: 0, vowNextFire: 0, vowNextAll: 0, endFire: 0, endAll: 0, lateFire: 0, lateAll: 0 }));
   for (const name of NAMES) {
     const { x, y } = example(name);
     const h = model.forward(x).hidden;
@@ -71,8 +73,8 @@ const stats = (): Stats[] => statCache ??= (() => {
       const cons = ch !== '.' && !VOWELS.has(ch), late = i >= 5 && VOWELS.has(ch), vowNext = VOWELS.has(nx), end = nx === '.';
       [NA, NB].forEach((j, n) => {
         const st = s[n];
-        st.total++; if (cons) st.consAll++; if (vowNext) st.vowNextAll++; if (end) st.endAll++; if (late) st.lateAll++;
-        if (h.d[i * h.c + j] > 0.5) { st.fires++; if (cons) st.consFire++; if (vowNext) st.vowNextFire++; if (end) st.endFire++; if (late) st.lateFire++; }
+        st.total++; if (i === 1) st.firstAll++; if (cons) st.consAll++; if (vowNext) st.vowNextAll++; if (end) st.endAll++; if (late) st.lateAll++;
+        if (h.d[i * h.c + j] > FIRE) { st.fires++; if (i === 1) st.firstFire++; if (cons) st.consFire++; if (vowNext) st.vowNextFire++; if (end) st.endFire++; if (late) st.lateFire++; }
       });
     }
   }
@@ -110,8 +112,8 @@ export const mlp: Lesson = {
       body: [
         { en: 'Attention lets each token collect a blend of what came before. But a blend is only a weighted average: it moves information around without doing much with it.', zh: '注意力讓每個詞元收集前面詞元的混合資訊。但混合只是加權平均：它把資訊搬來搬去，卻沒有真正加工。' },
         lz(() => ({
-          en: `So after attention, each token passes through a second part, the <b>MLP</b>. Switch it off in our trained model and its loss on names it never trained on rises from <b>${data().lossWith.toFixed(2)}</b> to <b>${data().lossWithout.toFixed(2)}</b>.`,
-          zh: `所以在注意力之後，每個詞元還要經過第二個部分：<b>MLP</b>。在訓練好的模型裡把它關掉，模型在沒練過的名字上的損失會從 <b>${data().lossWith.toFixed(2)}</b> 升到 <b>${data().lossWithout.toFixed(2)}</b>。`,
+          en: `So after attention, each token passes through a second part, the <b>MLP</b>. Switch it off in the course model (our trained model) and its <b>held-out loss</b>, the average surprise at the real next letter on 615 names it never trained on (lower is better), rises from <b>${data().lossWith.toFixed(2)}</b> to <b>${data().lossWithout.toFixed(2)}</b>.`,
+          zh: `所以在注意力之後，每個詞元還要經過第二個部分：<b>MLP</b>。在課程模型（我們訓練好的模型）裡把它關掉，它的<b>驗證損失</b>（在訓練時從沒看過的 615 個名字上，對真正下一個字母的平均「意外」程度，越低越好）會從 <b>${data().lossWith.toFixed(2)}</b> 升到 <b>${data().lossWithout.toFixed(2)}</b>。`,
         })),
       ],
       callout: { kind: 'insight', text: { en: 'Attention moves information between tokens. The MLP works on what each token now holds.', zh: '注意力負責在詞元之間搬運資訊，MLP 負責加工每個詞元手上的資訊。' } },
@@ -139,35 +141,35 @@ export const mlp: Lesson = {
       title: { en: 'ReLU: keep the positives', zh: 'ReLU：只留下正數' },
       body: [
         { en: 'Now a very simple rule called <b>ReLU</b>: a negative number becomes 0, a positive number stays as it is. Compare the two rows of numbers below.', zh: '接著套用一條很簡單的規則，叫做 <b>ReLU</b>：負數變成 0，正數維持原樣。比較下面兩列數字就知道了。' },
-        lz(() => ({ en: `So a neuron is either silent (0) or <b>fires</b> with some strength. For our “a”, ${data().active} of the 32 neurons fire. These outputs are called <b>activations</b>.`, zh: `所以每個神經元不是安靜（0），就是以某個強度<b>激發</b>。對我們的「a」來說，32 個神經元裡有 ${data().active} 個激發。這些輸出叫做<b>激活值（activation）</b>。` })),
+        lz(() => ({ en: `These outputs are called <b>activations</b>: a neuron is silent (0) or active with some strength. In this lesson a neuron <b>fires</b> when its activation is above ${FIRE}. For our “a”, ${data().aboveZero} of the 32 are above zero and ${data().active} fire.`, zh: `這些輸出叫做<b>活化值（activation）</b>：神經元不是安靜（0），就是以某個強度活躍。在這一課，活化值大於 ${FIRE} 就算這個神經元<b>激發</b>。對我們的「a」來說，32 個神經元裡有 ${data().aboveZero} 個大於 0，其中 ${data().active} 個激發。` })),
       ],
-      callout: { kind: 'note', text: { en: 'Without this bend, multiplying by w1 and then w2 would collapse into one plain matrix multiplication, and the MLP could learn nothing new. ReLU is what lets it make yes/no decisions.', zh: '如果少了這個「折彎」，先乘 w1 再乘 w2 就等於只乘一個矩陣，MLP 學不到任何新東西。正是 ReLU 讓它能做出「是／否」的判斷。' } },
+      callout: { kind: 'note', text: { en: 'Without this bend, multiplying by w1 and then w2 would collapse into a single 16 × 16 matrix, and the 32 neurons would add nothing a single matrix could not do. ReLU is what lets it make yes/no decisions. Real models mostly use smooth versions of the same bend (GELU in GPT-2, SwiGLU in LLaMA).', zh: '如果少了這個「折彎」，先乘 w1 再乘 w2 就會合併成單一個 16 × 16 矩陣，32 個神經元做不到任何單一矩陣做不到的事。正是 ReLU 讓它能做出「是／否」的判斷。真實的模型多半用同一種折彎的平滑版本（GPT-2 用 GELU，LLaMA 用 SwiGLU）。' } },
       changed: [{ sign: '~', text: { en: 'Negative scores → 0', zh: '負的分數 → 0' } }],
     },
     {
       short: { en: 'Shrink', zh: '縮回' }, chapter: 'technique',
       title: { en: 'Shrink back to 16', zh: '縮回 16 個數字' },
       body: [
-        { en: `The 32 activations are multiplied by a second matrix <code>w2</code> (32 × 16 = ${W2} weights) and a bias <code>b2</code> (16) is added. Out come 16 numbers again, the same size as the token’s vector.`, zh: `這 32 個激活值再乘上第二個矩陣 <code>w2</code>（32 × 16 = ${W2} 個權重），加上偏差 <code>b2</code>（16 個），又得到 16 個數字，大小和詞元的向量一樣。` },
-        { en: 'Each firing neuron adds its own learned pattern to this output; silent neurons add nothing. The output is then added onto the token’s vector (the next lesson explains why <i>added</i>).', zh: '每個激發的神經元都會把自己學到的模式加進輸出，安靜的神經元什麼也不加。這個輸出接著會被加回詞元的向量上（為什麼是「加上去」，下一課會說明）。' },
+        { en: `The 32 activations are multiplied by a second matrix <code>w2</code> (32 × 16 = ${W2} weights) and a bias <code>b2</code> (16) is added. Out come 16 numbers again, the same size as the token’s vector.`, zh: `這 32 個活化值再乘上第二個矩陣 <code>w2</code>（32 × 16 = ${W2} 個權重），加上偏差 <code>b2</code>（16 個），又得到 16 個數字，大小和詞元的向量一樣。` },
+        { en: 'Each firing neuron adds its own learned pattern to this output; silent neurons add nothing. The output is then added onto the token’s vector (The Residual Stream lesson explains why <i>added</i>).', zh: '每個激發的神經元都會把自己學到的模式加進輸出，安靜的神經元什麼也不加。這個輸出接著會被加回詞元的向量上（為什麼是「加上去」，「殘差流」那一課會說明）。' },
       ],
       changed: [{ sign: '+', text: { en: '16 output numbers', zh: '16 個輸出數字' } }],
     },
     {
       short: { en: 'Neuron #22', zh: '22 號神經元' }, chapter: 'solution',
-      title: { en: 'A neuron that spots consonants', zh: '一個會認出子音的神經元' },
+      title: { en: 'A neuron for the first letter', zh: '一個認得「第一個字母」的神經元' },
       body: [
         { en: 'Nobody told any neuron what to detect, yet some learn readable patterns. We checked all 32 over every letter of every name in our list. Neuron #22 is one of the clearest.', zh: '沒有人告訴神經元要偵測什麼，但有些還是學出了看得懂的模式。我們把 32 個神經元在清單裡每個名字的每個字母上都檢查了一遍，22 號是最清楚的之一。' },
-        { en: 'The numbers under each letter are its real activations. It fires mostly on a consonant at the start of a name (q, p), and stays silent on vowels. When it fires, a vowel usually comes next. (We count y as a vowel.)', zh: '每個字母下方的數字是它真實的激活值。它主要在名字開頭的子音（q、p）上激發，碰到母音就安靜。它一激發，下一個字母通常是母音。（這裡把 y 算作母音。）' },
+        lz(() => { const st = stats()[0]; return { en: `The numbers under each letter are its real activations. It fires on ${pct(st.firstFire / st.firstAll)} of first letters and rarely later, and ${pct(st.consFire / st.fires)} of its firings are on consonants. It is not a pure consonant detector: it also fires on the “u” of quinn. When it fires, a vowel usually comes next. (We count y as a vowel.)`, zh: `每個字母下方的數字是它真實的活化值。名字的第一個字母有 ${pct(st.firstFire / st.firstAll)} 會讓它激發，後面的字母就很少；它激發的時候，有 ${pct(st.consFire / st.fires)} 是在子音上。它不是純粹的子音偵測器：quinn 的「u」也會讓它激發。它一激發，下一個字母通常是母音。（這裡把 y 算作母音。）` }; }),
       ],
-      changed: [{ sign: '+', text: { en: 'Real activations of neuron #22', zh: '22 號神經元的真實激活值' } }],
+      changed: [{ sign: '+', text: { en: 'Real activations of neuron #22', zh: '22 號神經元的真實活化值' } }],
     },
     {
       short: { en: 'Neuron #2', zh: '2 號神經元' }, chapter: 'solution',
       title: { en: 'A neuron for “near the end”', zh: '一個代表「快結束了」的神經元' },
       body: [
         { en: 'Neuron #2 does something different. It is silent on early letters and fires on a vowel late in a longer name, such as the final “a” of <code>.olivia</code>.', zh: '2 號神經元做的事不一樣。它在前面的字母上都很安靜，只在較長名字後段的母音上激發，例如 <code>.olivia</code> 最後的「a」。' },
-        { en: 'When it fires, the name ends right after far more often than usual (right chart). Other neurons are messier: most respond to a mix of things, so we only claim what the counts show.', zh: '它一激發，名字緊接著就結束的比例比平常高很多（右邊的圖）。其他神經元就比較雜亂，多半同時對好幾種東西有反應，所以我們只說數據能證明的部分。' },
+        { en: 'When it fires, the name ends right after far more often than usual (right chart). Other neurons are messier: most respond to a mix of things, so we only claim what the counts show.', zh: '它一激發，名字緊接著就結束的比例比平常高很多（右邊的圖）。其他神經元就比較雜亂，多半同時對好幾種東西有反應，所以我們只說數字能證明的部分。' },
       ],
       callout: { kind: 'note', text: { en: 'A neuron firing together with an ending does not prove it causes the ending. The MLP’s output mixes all firing neurons at once.', zh: '某個神經元和「名字結束」一起出現，並不證明是它造成結束。MLP 的輸出是所有激發神經元一起混出來的。' } },
       changed: [{ sign: '~', text: { en: 'Same names, neuron #2', zh: '同樣的名字，換看 2 號神經元' } }],
@@ -186,7 +188,7 @@ export const mlp: Lesson = {
       title: { en: 'The MLP in one line', zh: '一句話說完 MLP' },
       body: [
         { en: 'For each token on its own: multiply by <code>w1</code> and add <code>b1</code> (16 → 32), apply <b>ReLU</b> (keep positives), multiply by <code>w2</code> and add <code>b2</code> (32 → 16), and add the result onto the token’s vector.', zh: '對每個詞元各自做：乘 <code>w1</code> 加 <code>b1</code>（16 → 32），套用 <b>ReLU</b>（只留正數），乘 <code>w2</code> 加 <code>b2</code>（32 → 16），再把結果加回詞元的向量上。' },
-        { en: 'The 32 hidden numbers are neurons. Some learn readable detectors, like #22 for consonants and #2 for “late vowel”.', zh: '中間那 32 個數字就是神經元。有些學成了看得懂的偵測器，例如偵測子音的 22 號和偵測「後段母音」的 2 號。' },
+        { en: 'The 32 hidden numbers are neurons. Some learn readable detectors, like #22 for “first letter, usually a consonant” and #2 for “late vowel”.', zh: '中間那 32 個數字就是神經元。有些學成了看得懂的偵測器，例如偵測「第一個字母，通常是子音」的 22 號，和偵測「後段母音」的 2 號。' },
       ],
       callout: { kind: 'next', text: { en: 'Next: Mixture of Experts. What if each block had several MLPs, and a router sent each token to just one of them?', zh: '下一課：混合專家模型。如果每個區塊有好幾個 MLP，再由一個路由器把每個詞元只送到其中一個，會怎樣？' } },
     },
@@ -228,9 +230,9 @@ export const mlp: Lesson = {
       items.push({ k: 'mlp0', t: 'box', x: 346, y: 250, w: 200, h: 46, label: t({ en: 'MLP: on or off?', zh: 'MLP：開或關？' }), tone: 'b' });
       items.push({ k: 'a1', t: 'arrow', x1: 446, y1: 228, x2: 446, y2: 248, tone: 'muted' });
       items.push({ k: 'lw', t: 'text', x: 280, y: 380, text: d.lossWith.toFixed(2), size: 34, bold: true, mono: true, anchor: 'middle', tone: 'a' });
-      items.push({ k: 'lwl', t: 'text', x: 280, y: 410, text: t({ en: 'held-out loss, MLP on', zh: '保留資料損失，MLP 開' }), size: 14, tone: 'muted', anchor: 'middle' });
+      items.push({ k: 'lwl', t: 'text', x: 280, y: 410, text: t({ en: 'held-out loss, MLP on', zh: '驗證損失，MLP 開' }), size: 14, tone: 'muted', anchor: 'middle' });
       items.push({ k: 'lo', t: 'text', x: 620, y: 380, text: d.lossWithout.toFixed(2), size: 34, bold: true, mono: true, anchor: 'middle', tone: 'bad' });
-      items.push({ k: 'lol', t: 'text', x: 620, y: 410, text: t({ en: 'held-out loss, MLP off', zh: '保留資料損失，MLP 關' }), size: 14, tone: 'muted', anchor: 'middle' });
+      items.push({ k: 'lol', t: 'text', x: 620, y: 410, text: t({ en: 'held-out loss, MLP off', zh: '驗證損失，MLP 關' }), size: 14, tone: 'muted', anchor: 'middle' });
       items.push({ k: 'lnote', t: 'text', x: 450, y: 460, text: t({ en: 'lower is better · measured on 615 names the model never trained on', zh: '越低越好 · 用模型從沒練過的 615 個名字測量' }), size: 13, tone: 'muted', anchor: 'middle' });
     }
 
@@ -248,7 +250,7 @@ export const mlp: Lesson = {
           items.push({ k: 'rla', t: 'arrow', x1: 450, y1: 240, x2: 450, y2: 298, tone: 'a' });
           items.push({ k: 'rll', t: 'text', x: 462, y: 274, text: t({ en: 'ReLU: negative → 0', zh: 'ReLU：負數 → 0' }), size: 14, tone: 'a' });
         }
-        items.push({ k: 'hid', t: 'vec', x: 66, y: hy, v: d.hidden, cell, label: t({ en: `activations: ${d.active} of 32 neurons fire`, zh: `激活值：32 個神經元中有 ${d.active} 個激發` }) });
+        items.push({ k: 'hid', t: 'vec', x: 66, y: hy, v: d.hidden, cell, label: t({ en: `activations: ${d.active} of 32 neurons fire (> ${FIRE})`, zh: `活化值：32 個神經元中有 ${d.active} 個激發（> ${FIRE}）` }) });
       }
       if (step === 3) {
         const cols = Array.from({ length: 10 }, (_, j) => j);
@@ -275,10 +277,10 @@ export const mlp: Lesson = {
         items.push({ k: 'rn' + r, t: 'text', x: 30, y: y - 12, text: w, size: 14, tone: 'muted', mono: true });
         [...w].forEach((ch, i) => {
           const a = d.acts[r][n][i];
-          items.push({ k: `c${r}_${i}`, t: 'token', text: ch, x: 30 + i * 56, y, sub: a.toFixed(2), tone: a > 0.5 ? 'a' : ch === '.' ? 'b' : 'ink', dim: a <= 0.5 });
+          items.push({ k: `c${r}_${i}`, t: 'token', text: ch, x: 30 + i * 56, y, sub: a.toFixed(2), tone: a > FIRE ? 'a' : ch === '.' ? 'b' : 'ink', dim: a <= FIRE });
         });
       });
-      items.push({ k: 'nh', t: 'text', x: 30, y: 30, text: t({ en: `neuron #${n === 0 ? NA : NB}: activation under each letter`, zh: `${n === 0 ? NA : NB} 號神經元：每個字母下方是激活值` }), size: 15, bold: true, tone: 'a' });
+      items.push({ k: 'nh', t: 'text', x: 30, y: 30, text: t({ en: `neuron #${n === 0 ? NA : NB}: activation under each letter`, zh: `${n === 0 ? NA : NB} 號神經元：每個字母下方是活化值` }), size: 15, bold: true, tone: 'a' });
       const b1 = n === 0
         ? { title: t({ en: 'current letter is a consonant', zh: '目前的字母是子音' }), all: st.consAll / st.total, fire: st.consFire / st.fires }
         : { title: t({ en: 'a vowel, 5th letter or later', zh: '第 5 個字母以後的母音' }), all: st.lateAll / st.total, fire: st.lateFire / st.fires };
@@ -288,7 +290,7 @@ export const mlp: Lesson = {
       const L = { all: t({ en: 'all letters', zh: '所有字母' }), fire: t({ en: 'it fires', zh: '激發時' }) };
       items.push({ k: 'bars1', t: 'bars', x: 480, y: 90, w: 180, h: 210, title: b1.title, items: [{ label: L.all, v: b1.all }, { label: L.fire, v: b1.fire, hi: true }] });
       items.push({ k: 'bars2', t: 'bars', x: 690, y: 90, w: 180, h: 210, title: b2.title, items: [{ label: L.all, v: b2.all }, { label: L.fire, v: b2.fire, hi: true }] });
-      items.push({ k: 'bn', t: 'text', x: 680, y: 350, text: t({ en: `“it fires” = activation > 0.5 (${fmt(st.fires)} of ${fmt(st.total)} letters)`, zh: `「激發時」＝激活值 > 0.5（${fmt(st.total)} 個字母中的 ${fmt(st.fires)} 個）` }), size: 13, tone: 'muted', anchor: 'middle' });
+      items.push({ k: 'bn', t: 'text', x: 680, y: 350, text: t({ en: `“it fires” = activation > ${FIRE} (${fmt(st.fires)} of ${fmt(st.total)} letters)`, zh: `「激發時」＝活化值 > ${FIRE}（${fmt(st.total)} 個字母中的 ${fmt(st.fires)} 個）` }), size: 13, tone: 'muted', anchor: 'middle' });
       items.push({ k: 'bn2', t: 'text', x: 680, y: 374, text: t({ en: `counted over all ${fmt(NAMES.length)} names`, zh: `統計全部 ${fmt(NAMES.length)} 個名字` }), size: 13, tone: 'muted', anchor: 'middle' });
       if (n === 1) {
         items.push({ k: 'pe', t: 'text', x: 680, y: 430, text: t({ en: `model after “.olivia”: end “.” ${pct(d.withMlp[0])}`, zh: `模型在「.olivia」之後：結束「.」${pct(d.withMlp[0])}` }), size: 14, anchor: 'middle', tone: 'a', bold: true });
@@ -335,7 +337,7 @@ export const mlp: Lesson = {
       legend: [
         { tone: 'pos', text: { en: 'positive number', zh: '正數' } },
         { tone: 'neg', text: { en: 'negative number', zh: '負數' } },
-        { tone: 'a', text: { en: 'neuron fires (> 0.5)', zh: '神經元激發（> 0.5）' } },
+        { tone: 'a', text: { en: `neuron fires (> ${FIRE})`, zh: `神經元激發（> ${FIRE}）` } },
       ],
     };
   },

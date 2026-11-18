@@ -31,7 +31,7 @@ export const tokens: Lesson = {
       short: { en: 'The problem', zh: '問題' }, chapter: 'problem',
       title: { en: 'A model cannot read', zh: '模型不會「讀」字' },
       body: [
-        { en: 'Through this course we will build a tiny model that invents first names. We teach it with a list of real names, such as <code>emma</code>.', zh: '在這門課裡，我們會打造一個會自己發明英文名字的小模型。我們用一份真實的名字清單來教它，例如 <code>emma</code>。' },
+        { en: 'Lesson 1 showed the model choosing among 27 tokens. Now: how does a name from our list, such as <code>emma</code>, become something it can compute with?', zh: '第 1 課看到模型在 27 個詞元之間做選擇。現在的問題是：清單裡的一個名字，例如 <code>emma</code>，要怎麼變成模型能拿來計算的東西？' },
         { en: 'But inside, a model is only multiplication and addition. It has no idea what the letter “e” is. Before anything else, text has to become numbers.', zh: '但是模型的內部只有乘法和加法，它完全不知道字母「e」是什麼。所以第一件事，就是把文字變成數字。' },
       ],
       callout: { kind: 'insight', text: { en: 'Everything a language model does starts with turning text into numbers, and ends with turning numbers back into text.', zh: '語言模型做的每一件事，都從「把文字變成數字」開始，並以「把數字變回文字」結束。' } },
@@ -81,7 +81,7 @@ export const tokens: Lesson = {
       title: { en: 'One name, five little quizzes', zh: '一個名字，五道小考題' },
       body: [
         { en: 'A language model has one job: <b>given the tokens so far, predict the next one</b>. So we line the sequence up against itself, shifted by one.', zh: '語言模型只有一個任務：<b>根據目前為止的詞元，預測下一個</b>。所以我們把序列和「往後移一格的自己」對齊。' },
-        { en: 'Each column is one quiz. After <code>.</code> comes e. After <code>.e</code> comes m. After <code>.emma</code> comes <code>.</code>, meaning “stop”. One name gives five examples.', zh: '每一欄都是一道考題。<code>.</code> 後面是 e；<code>.e</code> 後面是 m；<code>.emma</code> 後面是 <code>.</code>，意思是「停」。一個名字就產生了五筆訓練資料。' },
+        { en: 'Each column is one quiz, and the model reads everything up to it, not just one letter. After <code>.</code> comes e. After <code>.e</code> comes m. After <code>.emma</code> comes <code>.</code>, meaning “stop”. One name gives five examples.', zh: '每一欄都是一道考題，而且模型讀的是到那裡為止的全部內容，不只一個字母。<code>.</code> 後面是 e；<code>.e</code> 後面是 m；<code>.emma</code> 後面是 <code>.</code>，意思是「停」。一個名字就產生了五筆訓練資料。' },
       ],
       callout: { kind: 'insight', text: { en: 'Nobody labels this data by hand. The text itself supplies the right answers. That is why models can learn from enormous amounts of plain text.', zh: '這些資料不需要人工標註，文字本身就提供了正確答案。這正是模型能從海量純文字中學習的原因。' } },
       changed: [{ sign: '+', text: { en: '5 input → target pairs', zh: '5 組「輸入 → 目標」' } }],
@@ -91,9 +91,9 @@ export const tokens: Lesson = {
       title: { en: 'Real models use bigger pieces', zh: '真實的模型用更大的小塊' },
       body: [
         { en: 'Letters make long sequences. Whole words make a vocabulary that is far too large and breaks on any new word. Real models use something in between: <b>sub-word tokens</b>, pieces learned from the data so that common chunks get their own token.', zh: '用字母切，序列會很長；用整個單字切，詞彙表會大到無法處理，而且遇到新字就沒輒。真實的模型採取折衷做法：<b>子詞（sub-word）詞元</b>，也就是從資料中學出來的片段，常見的片段會有自己的詞元。' },
-        { en: 'Their vocabularies hold tens of thousands of tokens or more. The split shown here is an illustration; each real tokenizer cuts a little differently.', zh: '它們的詞彙表有數萬個以上的詞元。這裡畫的切法只是示意，每個真實的分詞器切法都略有不同。' },
+        { en: 'Their vocabularies hold tens of thousands to a few hundred thousand tokens. The split shown here is an illustration; each real tokenizer cuts a little differently, and common words are often a single token.', zh: '它們的詞彙表有數萬到數十萬個詞元。這裡畫的切法只是示意，每個真實的分詞器切法都略有不同，而常見的單字通常整個就是一個詞元。' },
       ],
-      callout: { kind: 'note', text: { en: 'Chinese works the same way: a character is often one token, sometimes more. Everything after tokenizing is identical for every language.', zh: '中文也是一樣的道理：一個字通常是一個詞元，有時會是好幾個。切完詞元之後，不論哪種語言，後面的流程完全相同。' } },
+      callout: { kind: 'note', text: { en: 'Chinese works the same way: a character is often one token; a rare character can take several, and a common word can be a single token. Everything after tokenizing is identical for every language.', zh: '中文也是一樣的道理：一個字通常是一個詞元；罕見的字可能要好幾個詞元，常見的詞也可能只算一個。切完詞元之後，不論哪種語言，後面的流程完全相同。' } },
     },
     {
       short: { en: 'Recap', zh: '回顧' }, chapter: 'recap',
@@ -132,7 +132,7 @@ export const tokens: Lesson = {
     }
 
     if (step === 2 || step === 3 || step === 4) {
-      items.push({ k: 'vlabel', t: 'text', x: 196, y: 228, text: t({ en: 'vocabulary · 27 tokens', zh: '詞彙表 · 27 個詞元' }), size: 14.5, tone: 'muted' });
+      items.push({ k: 'vlabel', t: 'text', x: 196 + 9 * 58 - 14, y: 228, anchor: 'end', text: t({ en: 'vocabulary · 27 tokens', zh: '詞彙表 · 27 個詞元' }), size: 14.5, tone: 'muted' });
       [...CHARS].forEach((ch, i) => {
         const p = vocabAt(i);
         const used = (step >= 3 && ids.includes(i)) || (step === 4 && i === 0);
@@ -147,20 +147,28 @@ export const tokens: Lesson = {
 
     if (step === 5) {
       const targets = [...shown.slice(1)];
-      items.push({ k: 'inl', t: 'text', x: x0 - 20, y: top + 28, text: t({ en: 'model reads', zh: '模型讀到' }), anchor: 'end', tone: 'muted', size: 13 });
+      items.push({ k: 'inl', t: 'text', x: x0 - 20, y: top + 28, text: t({ en: 'the sequence', zh: '序列' }), anchor: 'end', tone: 'muted', size: 13 });
+      items.push({ k: 'rdl', t: 'text', x: x0 - 20, y: top + 98, text: t({ en: 'has read so far', zh: '目前讀到' }), anchor: 'end', tone: 'muted', size: 13 });
       items.push({ k: 'tgl', t: 'text', x: x0 - 20, y: top + 178, text: t({ en: 'should predict', zh: '應該預測' }), anchor: 'end', tone: 'muted', size: 13 });
       targets.forEach((ch, i) => {
+        const cx = x0 + i * 62 + 22;
+        // a bracket under every chip this quiz reads, ending at its own column
+        items.push({ k: 'br' + i, t: 'path', x: 0, y: 0, pts: [[x0 + 2, top + 72 + i * 3], [cx + 18, top + 72 + i * 3]], tone: 'a', width: 1.5 });
+        items.push({ k: 'rd' + i, t: 'text', x: cx, y: top + 98, text: shown.slice(0, i + 1).join(''), anchor: 'middle', mono: true, size: 13, tone: 'a', bold: true });
         items.push({ k: 'tg' + i, t: 'token', x: x0 + i * 62, y: top + 150, text: ch, tone: 'a', sub: String(full[i + 1]) });
-        items.push({ k: 'ta' + i, t: 'arrow', x1: x0 + i * 62 + 22, y1: top + 68, x2: x0 + i * 62 + 22, y2: top + 144, tone: 'a' });
+        items.push({ k: 'ta' + i, t: 'arrow', x1: cx, y1: top + 108, x2: cx, y2: top + 144, tone: 'a' });
       });
-      items.push({ k: 'note5', t: 'text', x: 450, y: top + 260, text: t({ en: 'each column is one training example', zh: '每一欄都是一筆訓練資料' }), anchor: 'middle', tone: 'muted', size: 13 });
+      const lx = x0 + 5 * 62;
+      items.push({ k: 'lastn', t: 'text', x: lx, y: top + 166, text: t({ en: 'the last “.” is only an', zh: '最後的「.」只當答案，' }), tone: 'muted', size: 13 });
+      items.push({ k: 'lastn2', t: 'text', x: lx, y: top + 184, text: t({ en: 'answer, never a question', zh: '從來不當題目' }), tone: 'muted', size: 13 });
+      items.push({ k: 'note5', t: 'text', x: 450, y: top + 260, text: t({ en: 'each column is one training example: everything read so far → the next token', zh: '每一欄都是一筆訓練資料：目前讀到的全部 → 下一個詞元' }), anchor: 'middle', tone: 'muted', size: 13 });
     }
 
     if (step === 6) {
       const rows: { label: string; parts: string[]; y: number }[] = [
-        { label: t({ en: 'by letter · 11 tokens', zh: '按字母 · 11 個詞元' }), parts: [...'transformer'], y: 80 },
-        { label: t({ en: 'by word · 1 token, huge vocabulary', zh: '按單字 · 1 個詞元，詞彙表極大' }), parts: ['transformer'], y: 220 },
-        { label: t({ en: 'by sub-word · 2 tokens (illustration)', zh: '按子詞 · 2 個詞元（示意）' }), parts: ['transform', 'er'], y: 360 },
+        { label: t({ en: 'by letter · 12 tokens', zh: '按字母 · 12 個詞元' }), parts: [...'tokenization'], y: 80 },
+        { label: t({ en: 'by word · 1 token, huge vocabulary', zh: '按單字 · 1 個詞元，詞彙表極大' }), parts: ['tokenization'], y: 220 },
+        { label: t({ en: 'by sub-word · 2 tokens (illustration)', zh: '按子詞 · 2 個詞元（示意）' }), parts: ['token', 'ization'], y: 360 },
       ];
       rows.forEach((r, ri) => {
         items.push({ k: 'rl' + ri, t: 'text', x: 120, y: r.y - 14, text: r.label, tone: ri === 2 ? 'a' : 'muted', size: 14.5, bold: ri === 2 });
@@ -187,7 +195,7 @@ export const tokens: Lesson = {
     return {
       metrics: [
         { label: { en: 'Tokens', zh: '詞元數' }, value: tokenCount },
-        { label: { en: 'Vocabulary', zh: '詞彙表大小' }, value: step >= 2 ? (step === 6 ? '10,000s' : '27') : '—' },
+        { label: { en: 'Vocabulary', zh: '詞彙表大小' }, value: step >= 2 ? (step === 6 ? '10k–100k+' : '27') : '—' },
         { label: { en: 'Ids', zh: '編號序列' }, value: step >= 3 && step !== 6 ? `[${shownIds.join(', ')}]` : '—' },
         { label: { en: 'Training examples', zh: '訓練資料筆數' }, value: step === 5 || step === 7 ? '5' : '—' },
       ],

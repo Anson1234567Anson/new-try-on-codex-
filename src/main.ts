@@ -116,13 +116,24 @@ function renderControls(controls: Control[] | undefined, input: Input): void {
     box.innerHTML = controls.map((c) => {
       const id = `ctl-${c.key}`;
       const label = `<label for="${id}">${t(c.label)}</label>`;
-      if (c.kind === 'slider') return `<div class="ctl ctl--slider">${label}<input id="${id}" data-key="${c.key}" type="range" min="${c.min}" max="${c.max}" step="${c.step}" value="${input[c.key]}"><output id="${id}-out"></output></div>`;
-      if (c.kind === 'text') return `<div class="ctl ctl--text">${label}<input id="${id}" data-key="${c.key}" type="text" autocomplete="off" spellcheck="false" ${c.maxLength ? `maxlength="${c.maxLength}"` : ''} placeholder="${c.placeholder ? t(c.placeholder) : ''}" value="${String(input[c.key])}"></div>`;
-      if (c.kind === 'toggle') return `<div class="ctl ctl--toggle"><input id="${id}" data-key="${c.key}" type="checkbox" ${input[c.key] ? 'checked' : ''}>${label}</div>`;
-      return `<div class="ctl ctl--choice">${label}<div class="seg">${c.options.map((o) => `<button type="button" data-key="${c.key}" data-value="${o.value}">${t(o.label)}</button>`).join('')}</div></div>`;
+      if (c.kind === 'slider') return `<div class="ctl ctl--slider" data-ctl="${c.key}">${label}<input id="${id}" data-key="${c.key}" type="range" min="${c.min}" max="${c.max}" step="${c.step}" value="${input[c.key]}"><output id="${id}-out"></output></div>`;
+      if (c.kind === 'text') return `<div class="ctl ctl--text" data-ctl="${c.key}">${label}<input id="${id}" data-key="${c.key}" type="text" autocomplete="off" spellcheck="false" ${c.maxLength ? `maxlength="${c.maxLength}"` : ''} placeholder="${c.placeholder ? t(c.placeholder) : ''}" value="${String(input[c.key])}"></div>`;
+      if (c.kind === 'toggle') return `<div class="ctl ctl--toggle" data-ctl="${c.key}"><input id="${id}" data-key="${c.key}" type="checkbox" ${input[c.key] ? 'checked' : ''}>${label}</div>`;
+      return `<div class="ctl ctl--choice" data-ctl="${c.key}">${label}<div class="seg">${c.options.map((o) => `<button type="button" data-key="${c.key}" data-value="${o.value}">${t(o.label)}</button>`).join('')}</div></div>`;
     }).join('');
   }
   for (const c of controls) {
+    // labels and visibility can change on every draw without rebuilding the inputs
+    const wrap = box.querySelector<HTMLElement>(`[data-ctl="${c.key}"]`);
+    if (wrap) {
+      wrap.hidden = !!c.hidden;
+      const lab = wrap.querySelector('label');
+      if (lab && lab.textContent !== t(c.label)) lab.textContent = t(c.label);
+      if (c.kind === 'toggle') {
+        const cb = wrap.querySelector<HTMLInputElement>('input');
+        if (cb && cb.checked !== !!input[c.key]) cb.checked = !!input[c.key];
+      }
+    }
     if (c.kind === 'slider') {
       const out = document.getElementById(`ctl-${c.key}-out`);
       if (out) out.textContent = c.format ? c.format(input[c.key] as number) : String(input[c.key]);

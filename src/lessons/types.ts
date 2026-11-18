@@ -16,11 +16,15 @@ export interface Step {
  * A control the learner can change on this step. Its current value is passed
  * back to `scene(step, input)` as `input[key]`, and the diagram redraws live.
  */
-export type Control =
+export type Control = ({
+  /** Hide this control on this draw (it keeps its value). Labels may change from draw to draw. */
+  hidden?: boolean;
+} & (
   | { key: string; kind: 'slider'; label: L; min: number; max: number; step: number; value: number; format?: (v: number) => string }
   | { key: string; kind: 'text'; label: L; value: string; maxLength?: number; pattern?: string; placeholder?: L }
   | { key: string; kind: 'toggle'; label: L; value: boolean }
-  | { key: string; kind: 'choice'; label: L; options: { value: string; label: L }[]; value: string };
+  | { key: string; kind: 'choice'; label: L; options: { value: string; label: L }[]; value: string }
+));
 
 export type Input = Record<string, number | string | boolean>;
 

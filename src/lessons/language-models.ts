@@ -2,7 +2,7 @@ import type { Lesson, Step } from './types';
 import type { Item, Tone } from '../engine/scene';
 import { t } from '../i18n';
 import { GPT, type Weights } from '../model/gpt';
-import { CHARS, NAMES, rng } from '../model/data';
+import { CHARS, NAMES, TRAIN_NAMES, VAL_NAMES, rng } from '../model/data';
 import weights from '../model/weights.json';
 
 // The trained model writes one name, letter by letter, starting from ".".
@@ -58,13 +58,13 @@ export const languageModels: Lesson = {
   title: { en: 'What a Language Model Does', zh: '語言模型在做什麼' },
   blurb: {
     en: 'A language model does one thing: give a probability to every possible next token. Writing is that, on repeat.',
-    zh: '語言模型只做一件事：替每一個可能的下一個詞元打出機率。寫作，就是不斷重複這件事。',
+    zh: '語言模型只做一件事：替每一個可能的下一個詞元給出機率。寫作，就是不斷重複這件事。',
   },
   minutes: 8,
   level: 'beginner',
   learn: [
     { text: { en: 'The one question a language model answers', zh: '語言模型回答的唯一問題' }, step: 0 },
-    { text: { en: 'What “a probability for every next token” looks like', zh: '「替每個下一個詞元打機率」長什麼樣子' }, step: 1 },
+    { text: { en: 'What “a probability for every next token” looks like', zh: '「替每個下一個詞元給出機率」長什麼樣子' }, step: 1 },
     { text: { en: 'How writing works: pick, append, repeat', zh: '寫作怎麼運作：挑選、接上、重複' }, step: 4 },
     { text: { en: 'How the model knows when to stop', zh: '模型怎麼知道何時停下' }, step: 5 },
     { text: { en: 'Why picking at random beats always taking the top', zh: '為什麼隨機挑選比永遠選第一名好' }, step: 6 },
@@ -75,12 +75,14 @@ export const languageModels: Lesson = {
     const ch = (p: Pick) => CHARS[p.chosen];
     const fav = CHARS[top(first.probs)];
     const inList = NAMES.includes(d.name);
+    // the four letters that gain the most after the first pick
+    const rise = second.probs.map((v, i) => ({ i, g: v - first.probs[i] })).filter((x) => x.i !== 0).sort((a, b) => b.g - a.g).slice(0, 4).map((x) => x.i);
     return [
       {
         short: { en: 'The problem', zh: '問題' }, chapter: 'problem',
         title: { en: 'How does a machine write?', zh: '機器要怎麼寫字？' },
         body: [
-          { en: 'In this course we build a tiny model that invents first names. It learned from a list of about 3,000 real names, and it is the same kind of machine as a chatbot, only far smaller.', zh: '在這門課裡，我們會打造一個會發明英文名字的小模型。它從一份約 3,000 個真實名字的清單學習，跟聊天機器人是同一類機器，只是小得多。' },
+          { en: `In this course we build a tiny model that invents first names. It learned from a list of about 3,000 real names (it trains on ${TRAIN_NAMES.length.toLocaleString('en-US')} of them; we keep ${VAL_NAMES.length} aside to test it), and it is the same kind of machine as a chatbot, only far smaller.`, zh: `在這門課裡，我們會打造一個會發明英文名字的小模型。它從一份約 3,000 個真實名字的清單學習（其中 ${TRAIN_NAMES.length.toLocaleString('en-US')} 個用來訓練，另外 ${VAL_NAMES.length} 個留著測試它），跟聊天機器人是同一類機器，只是小得多。` },
           { en: 'Strangely, it can answer only one question: <b>given the text so far, what comes next?</b> Here the text so far is just <code>.</code>, our mark for “a name starts here”.', zh: '奇妙的是，它只會回答一個問題：<b>根據目前為止的文字，下一個是什麼？</b>這裡目前的文字只有 <code>.</code>，也就是我們用來表示「名字從這裡開始」的記號。' },
         ],
         callout: { kind: 'insight', text: { en: 'A language model is a next-token predictor. Everything it “writes” comes from answering that one question again and again.', zh: '語言模型就是「下一個詞元」的預測器。它「寫」出的一切，都來自一次又一次回答同一個問題。' } },
@@ -109,7 +111,7 @@ export const languageModels: Lesson = {
         title: { en: 'Append it and ask again', zh: '接上去，再問一次' },
         body: [
           { en: `Now the text so far is <code>${show(second.prefix)}</code>. We feed that back in and ask the same question. The probabilities are completely different, because the context changed.`, zh: `現在目前的文字是 <code>${show(second.prefix)}</code>。我們把它再送進模型，問同一個問題。機率完全不一樣了，因為上下文變了。` },
-          { en: `After ${q(ch(first))}, vowels jump up. The draw picks ${q(ch(second))} with ${pct(second.probs[second.chosen])}.`, zh: `在${qz(ch(first))}之後，母音的機率一下子升高。這次抽中${qz(ch(second))}，機率 ${pct(second.probs[second.chosen])}。` },
+          { en: `After ${q(ch(first))}, a few letters jump up: ${rise.map((i) => CHARS[i]).join(', ')}, as in ${rise.map((i) => `<i>${ch(first)}${CHARS[i]}-</i>`).join(', ')}. The model has learned which letters can follow ${q(ch(first))}. The draw picks ${q(ch(second))} with ${pct(second.probs[second.chosen])}.`, zh: `在${qz(ch(first))}之後，有幾個字母一下子升高：${rise.map((i) => CHARS[i]).join('、')}，就像 ${rise.map((i) => `<i>${ch(first)}${CHARS[i]}-</i>`).join('、')}。模型學會了哪些字母可以接在${qz(ch(first))}後面。這次抽中${qz(ch(second))}，機率 ${pct(second.probs[second.chosen])}。` },
         ],
         changed: [{ sign: '~', text: { en: `Text so far: ${show(second.prefix)} → ${show([...second.prefix, second.chosen])}`, zh: `目前文字：${show(second.prefix)} → ${show([...second.prefix, second.chosen])}` } }],
       },
@@ -146,8 +148,8 @@ export const languageModels: Lesson = {
         short: { en: 'Chatbots', zh: '聊天機器人' }, chapter: 'technique',
         title: { en: 'Chatbots run the same loop', zh: '聊天機器人跑的是同一個迴圈' },
         body: [
-          { en: 'A chatbot answering you does exactly this: read the text so far, give a probability to every token, pick one, append it, repeat, until it picks an “end” token.', zh: '聊天機器人回答你時，做的正是這件事：讀取目前的文字，替每個詞元打機率，挑一個，接上去，重複，直到挑中「結束」詞元。' },
-          { en: `What differs is size. Our model has ${d.count.toLocaleString()} weights and 27 tokens. Chatbots have billions of weights and vocabularies of tens of thousands of tokens, mostly pieces of words.`, zh: `不同的是規模。我們的模型有 ${d.count.toLocaleString()} 個權重、27 個詞元；聊天機器人則有數十億個權重，詞彙表有數萬個詞元，大多是單字的片段。` },
+          { en: 'A chatbot answering you does exactly this: read the text so far, give a probability to every token, pick one, append it, repeat, until it picks an “end” token.', zh: '聊天機器人回答你時，做的正是這件事：讀取目前的文字，替每個詞元給出機率，挑一個，接上去，重複，直到挑中「結束」詞元。' },
+          { en: `What differs is size. Our model has ${d.count.toLocaleString()} <b>weights</b>: adjustable numbers that training tuned until the predictions came out right. Chatbots have billions of weights and vocabularies of tens of thousands to a few hundred thousand tokens, mostly pieces of words.`, zh: `不同的是規模。我們的模型有 ${d.count.toLocaleString()} 個<b>權重</b>：可以調整的數字，訓練會一直調整它們，直到預測變準。聊天機器人則有數十億個權重，詞彙表有數萬到數十萬個詞元，大多是單字的片段。` },
         ],
         callout: { kind: 'insight', text: { en: 'Inside, the rest of this course is about one thing: how the model turns the text so far into those probabilities.', zh: '接下來的整門課，其實只在講一件事：模型如何把目前的文字變成那些機率。' } },
       },
@@ -155,7 +157,7 @@ export const languageModels: Lesson = {
         short: { en: 'Recap', zh: '回顧' }, chapter: 'recap',
         title: { en: 'Writing is prediction on repeat', zh: '寫作就是不斷重複的預測' },
         body: [
-          { en: 'A language model gives a <b>probability</b> to every possible next token.<br><b>Sampling</b> draws one, weighted by those probabilities.<br>Append it and ask again: that loop writes text.<br>A special token means “stop”.<br>Always taking the top token gives the same text every time.', zh: '語言模型替每個可能的下一個詞元打出<b>機率</b>。<br><b>取樣</b>依照這些機率抽出一個。<br>接上去再問一次：這個迴圈就能寫出文字。<br>一個特殊詞元代表「停止」。<br>永遠選第一名，每次都會寫出一樣的東西。' },
+          { en: 'A language model gives a <b>probability</b> to every possible next token.<br><b>Sampling</b> draws one, weighted by those probabilities.<br>Append it and ask again: that loop writes text.<br>A special token means “stop”.<br>Always taking the top token gives the same text every time.', zh: '語言模型替每個可能的下一個詞元給出<b>機率</b>。<br><b>取樣</b>依照這些機率抽出一個。<br>接上去再問一次：這個迴圈就能寫出文字。<br>一個特殊詞元代表「停止」。<br>永遠選第一名，每次都會寫出一樣的東西。' },
         ],
         callout: { kind: 'next', text: { en: 'Next: Tokens. Before the model can give probabilities, text must be cut into tokens and turned into numbers.', zh: '下一課：詞元。在模型給出機率之前，文字必須先被切成詞元、變成數字。' } },
       },
@@ -171,7 +173,7 @@ export const languageModels: Lesson = {
       // chips: the start dot, then every chosen token so far
       const chips: { text: string; sub?: string; tone: Tone }[] = [{ text: '.', tone: 'b' }];
       for (let i = 0; i < upto; i++) chips.push({ text: CHARS[ps[i].chosen], sub: pct(ps[i].probs[ps[i].chosen]), tone: ps[i].chosen === 0 ? 'b' : 'ink' });
-      if (showNow) chips.push({ text: CHARS[ps[upto].chosen], sub: pct(ps[upto].probs[ps[upto].chosen]), tone: 'a' });
+      if (showNow) chips.push({ text: CHARS[ps[upto].chosen], sub: pct(ps[upto].probs[ps[upto].chosen]), tone: ps[upto].chosen === 0 ? 'b' : 'a' });
       const x0 = 450 - (chips.length * 62 - 18) / 2;
       chips.forEach((c, i) => items.push({ k: (greedy ? 'g' : 'c') + i, t: 'token', x: x0 + i * 62, y, text: c.text, sub: c.sub, tone: c.tone }));
       return x0 + chips.length * 62;
@@ -228,14 +230,14 @@ export const languageModels: Lesson = {
       items.push({ k: 'ls', t: 'text', x: 455, y: 405, anchor: 'middle', size: 14.5, tone: 'muted', text: t({ en: 'until the “end” token is picked', zh: '直到挑中「結束」詞元' }) });
       if (step === 7) {
         items.push({ k: 'us', t: 'text', x: 220, y: 470, anchor: 'middle', size: 15, text: t({ en: `ours: ${d.count.toLocaleString()} weights · 27 tokens`, zh: `我們的：${d.count.toLocaleString()} 個權重 · 27 個詞元` }) });
-        items.push({ k: 'them', t: 'text', x: 630, y: 470, anchor: 'middle', size: 15, tone: 'b', text: t({ en: 'chatbots: billions of weights · 10,000s of tokens', zh: '聊天機器人：數十億個權重 · 數萬個詞元' }) });
+        items.push({ k: 'them', t: 'text', x: 630, y: 470, anchor: 'middle', size: 15, tone: 'b', text: t({ en: 'chatbots: billions of weights · 10,000s–100,000s of tokens', zh: '聊天機器人：數十億個權重 · 數萬到數十萬個詞元' }) });
       } else {
         items.push({ k: 'us', t: 'text', x: 450, y: 470, anchor: 'middle', size: 16, tone: 'a', bold: true, text: t({ en: `our model wrote: ${d.name}`, zh: `我們的模型寫出：${d.name}` }) });
       }
     }
 
     const written = step === 0 ? '.' : step === 6 ? '.' + d.greedyName + '.' : step >= 7 ? '.' + d.name + '.' : show(step >= 2 ? [...cur.prefix, cur.chosen] : cur.prefix);
-    const picked = step >= 2 && step <= 5 ? `“${CHARS[cur.chosen]}” ${pct(cur.probs[cur.chosen])}` : '—';
+    const picked = step >= 2 && step <= 5 ? t({ en: `“${CHARS[cur.chosen]}” ${pct(cur.probs[cur.chosen])}`, zh: `「${CHARS[cur.chosen]}」 ${pct(cur.probs[cur.chosen])}` }) : '—';
     return {
       metrics: [
         { label: { en: 'Text so far', zh: '目前的文字' }, value: written },

@@ -121,7 +121,7 @@ h1 { font-size: 27px; letter-spacing: -.02em; line-height: 1.2; }
 
 /* ---------- controls ---------- */
 .controls { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; margin-top: 12px; padding: 10px 14px; border: 1px dashed var(--a); border-radius: 10px; background: var(--a-soft); }
-.controls[hidden] { display: none; }
+.controls[hidden], .ctl[hidden] { display: none; }
 .ctl { display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 600; }
 .ctl input[type="range"] { width: 180px; accent-color: var(--a); }
 .ctl output { font-family: var(--mono); min-width: 4ch; }

@@ -90,7 +90,7 @@ export const multiHead: Lesson = {
       title: { en: 'One head, one set of shares', zh: '一個頭，只有一組比例' },
       body: [
         { en: 'In the Self-Attention lesson each token handed out its attention once: one set of shares that adds up to 100%. Here is our 1-head model reading <code>.samir</code>, for the last letter “r”.', zh: '在「自注意力」那一課，每個詞元只分配一次注意力：一組加起來 100% 的比例。這是我們的單頭模型讀入 <code>.samir</code> 時，最後一個字母「r」的分配。' },
-        { en: 'But a letter may want two different things at once: the letter right before it, and something further back, such as the earlier vowel. With one set of shares, attention given to one is taken from the other.', zh: '但一個字母可能同時想要兩種不同的東西：緊鄰在前的字母，以及更前面的資訊，例如前面那個母音。只有一組比例的話，給了這邊，那邊就少了。' },
+        lz((d) => ({ en: `But a letter may want two different things at once: the letter right before it, and something further back, such as the earlier vowel. With one set of shares, attention given to one is taken from the other. Here it chose the letter just before (“i”, ${pct(d.one[F - 1])}), so almost nothing is left for the earlier vowel “a” (${pct(d.one[2])}).`, zh: `但一個字母可能同時想要兩種不同的東西：緊鄰在前的字母，以及更前面的資訊，例如前面那個母音。只有一組比例的話，給了這邊，那邊就少了。這裡它選了緊鄰在前的字母（「i」，${pct(d.one[F - 1])}），前面的母音「a」幾乎什麼都沒分到（${pct(d.one[2])}）。` })),
       ],
       callout: { kind: 'insight', text: { en: 'One attention head is one question per token. Multi-head attention lets each token ask several questions at once.', zh: '一個注意力頭，就是每個詞元問一個問題。多頭注意力讓每個詞元同時問好幾個問題。' } },
     },
@@ -98,8 +98,8 @@ export const multiHead: Lesson = {
       short: { en: 'Split', zh: '分頭' }, chapter: 'technique',
       title: { en: 'Two smaller heads instead of one', zh: '用兩個較小的頭取代一個' },
       body: [
-        { en: 'We trained a second model that is identical except for attention: it has <b>2 heads</b>. Each <b>head</b> is a complete attention of its own, with its own query, key and value matrices.', zh: '我們另外訓練了一個模型，除了注意力以外完全相同：它有 <b>2 個頭</b>。每個<b>頭（head）</b>都是一套完整的注意力，有自己的查詢、鍵、值矩陣。' },
-        lz((d) => ({ en: `To keep the size equal, each head works with 8 numbers instead of 16. Both models have exactly ${d.count2.toLocaleString()} weights: the heads split the work, they do not add to it.`, zh: `為了讓大小相同，每個頭只用 8 個數字，而不是 16 個。兩個模型的權重數完全一樣，都是 ${d.count2.toLocaleString()} 個：多頭是把工作拆開，不是多加工作。` })),
+        { en: 'We trained a second model (6,000 steps, like the course model) that is identical except for attention: it has <b>2 heads</b>. Each <b>head</b> is a complete attention of its own, with its own query, key and value matrices.', zh: '我們另外訓練了一個模型（和課程模型一樣訓練 6,000 步），除了注意力以外完全相同：它有 <b>2 個頭</b>。每個<b>頭（head）</b>都是一套完整的注意力，有自己的查詢、鍵、值矩陣。' },
+        lz((d) => ({ en: `Each head reads all 16 numbers of the token, but its matrices are 16 × 8, so its query, key and value have 8 numbers instead of 16. Both models have exactly ${d.count2.toLocaleString()} weights: the heads split the work, they do not add to it.`, zh: `每個頭都讀詞元全部的 16 個數字，但它的矩陣是 16 × 8，所以它的查詢、鍵、值只有 8 個數字，而不是 16 個。兩個模型的權重數完全一樣，都是 ${d.count2.toLocaleString()} 個：多頭是把工作拆開，不是多加工作。` })),
       ],
       changed: [
         { sign: '~', text: { en: '1 head × 16 → 2 heads × 8', zh: '1 個頭 × 16 → 2 個頭 × 8' } },
@@ -108,7 +108,7 @@ export const multiHead: Lesson = {
     },
     {
       short: { en: 'Head 1', zh: '第 1 頭' }, chapter: 'technique',
-      title: { en: 'Head 1 looks at the letter just before', zh: '第 1 頭看緊鄰在前的字母' },
+      title: { en: 'Head 1 usually looks just before', zh: '第 1 頭通常看緊鄰在前的字母' },
       body: [
         { en: 'This is head 1’s full attention grid for <code>.samir</code>: each row is a letter asking, each column a letter being looked at, and future positions are masked.', zh: '這是第 1 頭在 <code>.samir</code> 上完整的注意力表：每一列是發問的字母，每一行是被看的字母，未來的位置被遮住。' },
         lz((d) => { const f = focus(d, 0); return { en: `Read the bottom row: “r” gives ${pct(f.v)} of head 1’s attention to “${f.ch}”${f.j === F - 1 ? ', the letter right before it' : ''}.`, zh: `看最下面那一列：「r」把第 1 頭 ${pct(f.v)} 的注意力給了「${f.ch}」${f.j === F - 1 ? '，也就是緊鄰在它前面的字母' : ''}。` }; }),
@@ -117,7 +117,7 @@ export const multiHead: Lesson = {
     },
     {
       short: { en: 'Head 2', zh: '第 2 頭' }, chapter: 'technique',
-      title: { en: 'Head 2 looks somewhere else', zh: '第 2 頭看的是別的地方' },
+      title: { en: 'Head 2 often looks somewhere else', zh: '第 2 頭常常看別的地方' },
       body: [
         lz((d) => { const f = focus(d, 1); return { en: `Head 2 reads the same letters at the same time, with its own matrices. Its bottom row gives ${pct(f.v)} to “${f.ch}”${vowelPos(f.j) ? `, the vowel ${F - f.j} letters back` : ''}.`, zh: `第 2 頭在同一時間讀同樣的字母，但用自己的矩陣。它的最下面一列把 ${pct(f.v)} 給了「${f.ch}」${vowelPos(f.j) ? `，也就是往前數 ${F - f.j} 個的母音` : ''}。` }; }),
         { en: 'So for this letter the two heads collect two different pieces of context, without competing for the same 100%. Each head has its own 100% to hand out.', zh: '所以對這個字母來說，兩個頭收集了兩份不同的上下文，而且不必搶同一個 100%：每個頭都有自己的 100% 可以分配。' },
@@ -156,17 +156,17 @@ export const multiHead: Lesson = {
       short: { en: 'Did it help?', zh: '有幫助嗎？' }, chapter: 'problem',
       title: { en: 'Case: do two heads help on our task?', zh: '案例：在我們的任務上，兩個頭有幫助嗎？' },
       body: [
-        lz((d) => ({ en: `We trained both models the same way for 1,500 steps and measured the loss on names they never saw (lower is better). Final: 1 head ${last(d.base).toFixed(3)}, 2 heads ${last(d.heads2).toFixed(3)}. Best along the way: ${best(d.base).toFixed(3)} and ${best(d.heads2).toFixed(3)}.`, zh: `我們用同樣的方式把兩個模型各訓練 1,500 步，再用它們沒看過的名字量損失（越低越好）。最後：單頭 ${last(d.base).toFixed(3)}，雙頭 ${last(d.heads2).toFixed(3)}。過程中最好的：${best(d.base).toFixed(3)} 和 ${best(d.heads2).toFixed(3)}。` })),
-        { en: 'About the same. Names are at most 8 tokens, so one 16-wide head already sees enough, and splitting leaves each head only 8 numbers. Large models read long texts with far wider vectors; there many heads per layer is standard, and some heads turn out to have recognisable jobs, such as looking at the previous token.', zh: '差不多一樣。名字最多 8 個詞元，一個 16 數字寬的頭已經看得夠了，拆開反而讓每個頭只剩 8 個數字。大型模型讀的是長篇文字、向量也寬得多，在那裡每層用很多個頭是標準做法，而且有些頭被發現有可辨認的工作，例如專門看前一個詞元。' },
+        { en: 'To compare, we use the <b>loss</b>: how surprised the model is by the real next letter, on average. Pure guessing among 27 letters scores 3.30, and lower is better. We measure the <b>held-out loss</b>: the loss on 615 names the model never trained on.', zh: '要比較，我們看<b>損失（loss）</b>：模型對真正的下一個字母平均有多「意外」。在 27 個字母裡瞎猜是 3.30，越低越好。我們量的是<b>驗證損失</b>：模型在訓練時從沒看過的 615 個名字上的損失。' },
+        lz((d) => ({ en: `In two comparison runs, a 1-head and a 2-head design were trained the same way for 1,500 steps. Final held-out loss: 1 head ${last(d.base).toFixed(3)}, 2 heads ${last(d.heads2).toFixed(3)}; best along the way ${best(d.base).toFixed(3)} and ${best(d.heads2).toFixed(3)}. About the same: names are at most 8 tokens, so one 16-wide head already sees enough.`, zh: `我們做了兩次比較實驗：單頭和雙頭的設計用同樣的方式各訓練 1,500 步。最後的驗證損失：單頭 ${last(d.base).toFixed(3)}，雙頭 ${last(d.heads2).toFixed(3)}；過程中最好的是 ${best(d.base).toFixed(3)} 和 ${best(d.heads2).toFixed(3)}。差不多一樣：名字最多 8 個詞元，一個 16 數字寬的頭已經看得夠了。` })),
       ],
-      callout: { kind: 'note', text: { en: 'The original Transformer paper (2017) used 8 heads per layer. More heads is not automatically better; it is a design choice tested by experiment.', zh: '最早的 Transformer 論文（2017）每層用 8 個頭。頭越多不一定越好，這是要靠實驗驗證的設計選擇。' } },
+      callout: { kind: 'note', text: { en: 'These are short comparison runs (constant learning rate 0.01), not the 2-head model in the grids above. Large models read long texts with far wider vectors, and there many heads per layer is standard: the original Transformer paper (2017) used 8.', zh: '這些是較短的比較實驗（學習率固定 0.01），不是上面注意力表用的雙頭模型。大型模型讀的是長篇文字、向量也寬得多，在那裡每層用很多個頭是標準做法：最早的 Transformer 論文（2017）用了 8 個。' } },
       changed: [{ sign: '~', text: { en: '1 head vs 2 heads, real training runs', zh: '單頭與雙頭，真實的訓練紀錄' } }],
     },
     {
       short: { en: 'Recap', zh: '回顧' }, chapter: 'recap',
       title: { en: 'Several questions at once', zh: '同時問好幾個問題' },
       body: [
-        { en: 'Each <b>head</b> is a full attention with its own query, key and value matrices, working on a slice of the numbers.<br>Heads hand out their own 100% and can learn different habits.<br>Their results are <b>concatenated</b> and mixed by the output matrix <code>o</code>.<br>Same number of weights; on our tiny task, about the same loss.', zh: '每個<b>頭</b>都是一套完整的注意力，有自己的查詢、鍵、值矩陣，處理一部分的數字。<br>每個頭分配自己的 100%，可以學到不同的習慣。<br>各頭的結果<b>串接</b>起來，再由輸出矩陣 <code>o</code> 混合。<br>權重數相同；在我們的小任務上，損失也差不多。' },
+        { en: 'Each <b>head</b> is a full attention with its own query, key and value matrices, each producing 8 numbers from the full 16.<br>Heads hand out their own 100% and can learn different habits.<br>Their results are <b>concatenated</b> and mixed by the output matrix <code>o</code>.<br>Same number of weights; on our tiny task, about the same loss.', zh: '每個<b>頭</b>都是一套完整的注意力，有自己的查詢、鍵、值矩陣，各自從完整的 16 個數字算出 8 個數字。<br>每個頭分配自己的 100%，可以學到不同的習慣。<br>各頭的結果<b>串接</b>起來，再由輸出矩陣 <code>o</code> 混合。<br>權重數相同；在我們的小任務上，損失也差不多。' },
       ],
       callout: { kind: 'next', text: { en: 'Next: Positional Information. Attention compares contents, so how does the model know which letter came first?', zh: '下一課：位置資訊。注意力比較的是內容，那模型怎麼知道哪個字母在前面？' } },
     },
@@ -234,7 +234,7 @@ export const multiHead: Lesson = {
       items.push({
         k: 'chart', t: 'chart', x: 90, y: 50, w: 740, h: 320, ymin: 2.1, ymax: 2.6, xmax: 1500, every: experiments.variants.base.every,
         series: [{ pts: d.base, tone: 'b' }, { pts: d.heads2, tone: 'a' }],
-        xlabel: t({ en: 'training steps', zh: '訓練步數' }), ylabel: t({ en: 'loss on unseen names (lower is better)', zh: '沒看過的名字上的損失（越低越好）' }),
+        xlabel: t({ en: 'training steps', zh: '訓練步數' }), ylabel: t({ en: 'held-out loss (lower is better)', zh: '驗證損失（越低越好）' }),
       });
       items.push({ k: 'fin1', t: 'text', x: 300, y: 450, anchor: 'middle', size: 17, bold: true, mono: true, tone: 'b', text: t({ en: `1 head: ${last(d.base).toFixed(3)}`, zh: `單頭：${last(d.base).toFixed(3)}` }) });
       items.push({ k: 'fin2', t: 'text', x: 620, y: 450, anchor: 'middle', size: 17, bold: true, mono: true, tone: 'a', text: t({ en: `2 heads: ${last(d.heads2).toFixed(3)}`, zh: `雙頭：${last(d.heads2).toFixed(3)}` }) });
@@ -261,8 +261,8 @@ export const multiHead: Lesson = {
       metrics: [
         { label: { en: 'Heads', zh: '頭數' }, value: step === 0 ? '1' : '2' },
         { label: { en: 'Numbers per head', zh: '每頭的數字' }, value: step === 0 ? '16' : '8' },
-        { label: { en: 'Head 1 → ', zh: '第 1 頭 →' }, value: f0 ? `“${f0.ch}” ${pct(f0.v)}` : '—' },
-        { label: { en: 'Head 2 → ', zh: '第 2 頭 →' }, value: f1 ? `“${f1.ch}” ${pct(f1.v)}` : '—' },
+        { label: { en: 'Head 1 → ', zh: '第 1 頭 →' }, value: f0 ? t({ en: `“${f0.ch}” ${pct(f0.v)}`, zh: `「${f0.ch}」 ${pct(f0.v)}` }) : '—' },
+        { label: { en: 'Head 2 → ', zh: '第 2 頭 →' }, value: f1 ? t({ en: `“${f1.ch}” ${pct(f1.v)}`, zh: `「${f1.ch}」 ${pct(f1.v)}` }) : '—' },
         { label: { en: 'Weights', zh: '權重數' }, value: (step === 0 ? d.count1 : d.count2).toLocaleString() },
       ],
       items,
