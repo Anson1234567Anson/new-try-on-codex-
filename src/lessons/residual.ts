@@ -83,6 +83,7 @@ const sz = (v: number) => (v >= 100 ? v.toFixed(0) : v >= 0.1 ? v.toPrecision(2)
 const top = (p: number[], n: number) =>
   p.map((v, i) => ({ label: CHARS[i], v })).sort((a, b) => b.v - a.v).slice(0, n).map((b) => ({ ...b, hi: b.label === 'y' }));
 const best = (p: number[]) => top(p, 1)[0];
+const q = (b: { label: string; v: number }) => t({ en: `“${b.label}” ${pct(b.v)}`, zh: `「${b.label}」${pct(b.v)}` });
 
 // stream geometry
 const SY = 160; // y of the stream line
@@ -135,7 +136,7 @@ export const residual: Lesson = {
       short: { en: 'The stream', zh: '殘差流' }, chapter: 'technique',
       title: { en: 'A stream that parts write into', zh: '一條讓各部分寫入的「流」' },
       body: [
-        { en: 'Picture the token’s vector as a stream flowing from the input to the output. Attention and the MLP branch off, read it, and add their result back in. This is the <b>residual stream</b>; the added results are called <b>residuals</b>.', zh: '把詞元的向量想像成一條從輸入流到輸出的河。注意力和 MLP 從旁邊分出來，讀取它，再把結果加回去。這就是<b>殘差流（residual stream）</b>，加回去的結果叫做<b>殘差（residual）</b>。' },
+        { en: 'Picture the token’s vector as a stream flowing from the input to the output. Attention and the MLP branch off, read it, and add their result back in. This is the <b>residual stream</b>. Why “residual”? Each part only has to supply the <i>difference</i>, the bit left over (the residual), between what the vector is and what it should become.', zh: '把詞元的向量想像成一條從輸入流到輸出的河。注意力和 MLP 從旁邊分出來，讀取它，再把結果加回去。這就是<b>殘差流（residual stream）</b>。為什麼叫「殘差」？因為每個部分只需要補上向量「現在的樣子」和「該變成的樣子」之間的<i>差額</i>，也就是剩下來的那一點（殘差）。' },
         lz(() => ({ en: `Each addition makes the vector longer. Its size (the length of the 16 numbers seen as an arrow) grows from ${size(data().x).toFixed(2)} to ${size(data().x1).toFixed(2)} to ${size(data().x2).toFixed(2)}.`, zh: `每加一次，向量就變長一點。它的大小（把 16 個數字看成一支箭頭時的長度）從 ${size(data().x).toFixed(2)} 變成 ${size(data().x1).toFixed(2)}，再變成 ${size(data().x2).toFixed(2)}。` })),
       ],
       callout: { kind: 'note', text: { en: 'That growing size matters later: the Layer Normalization lesson deals with it.', zh: '這個越來越大的尺寸之後會造成問題，「層正規化」那一課會處理它。' } },
@@ -155,7 +156,7 @@ export const residual: Lesson = {
       title: { en: 'Case: switch off attention', zh: '案例：關掉注意力' },
       body: [
         lz(() => ({ en: `Set the attention output to zero, so <code>x1 = x</code>. Now the second “m” cannot see the first one. The top guess becomes “${best(data().probs.noAtt).label}” (${pct(best(data().probs.noAtt).v)}) and “y” drops to ${pct(data().probs.noAtt[CHARS.indexOf('y')])}.`, zh: `把注意力的輸出設成零，於是 <code>x1 = x</code>。現在第二個「m」看不到第一個「m」了。最可能的答案變成「${best(data().probs.noAtt).label}」（${pct(best(data().probs.noAtt).v)}），「y」則降到 ${pct(data().probs.noAtt[CHARS.indexOf('y')])}。` })),
-        lz(() => ({ en: `Over 615 names the model never trained on, the loss rises from ${data().loss.normal.toFixed(2)} to ${data().loss.noAtt.toFixed(2)}.`, zh: `在模型沒練過的 615 個名字上，損失從 ${data().loss.normal.toFixed(2)} 升到 ${data().loss.noAtt.toFixed(2)}。` })),
+        lz(() => ({ en: `The <b>held-out loss</b> rises from ${data().loss.normal.toFixed(2)} to ${data().loss.noAtt.toFixed(2)}. (Loss: a score for how surprised the model is by the right next letter; lower is better. Held-out: measured on the 615 names the model never trained on.)`, zh: `<b>驗證損失</b>從 ${data().loss.normal.toFixed(2)} 升到 ${data().loss.noAtt.toFixed(2)}。（損失：模型看到正確的下一個字母時有多「意外」的分數，越低越好。驗證損失：在模型訓練時從沒看過的 615 個名字上量的損失。）` })),
       ],
       callout: { kind: 'note', text: { en: 'Switching a part off and measuring the damage is called an ablation. It is a common way to find out what a part does.', zh: '把某個部分關掉、再量測造成的損害，這叫做消融實驗（ablation），是了解某個部分功用的常見方法。' } },
       changed: [{ sign: '~', text: { en: 'Attention output → 0', zh: '注意力輸出 → 0' } }],
@@ -165,7 +166,7 @@ export const residual: Lesson = {
       title: { en: 'Case: switch off the MLP', zh: '案例：關掉 MLP' },
       body: [
         lz(() => ({ en: `Now keep attention but zero the MLP output, so <code>x2 = x1</code>. The prediction smears out: the top guess is “${best(data().probs.noMlp).label}” with only ${pct(best(data().probs.noMlp).v)}.`, zh: `這次保留注意力，但把 MLP 的輸出設成零，於是 <code>x2 = x1</code>。預測變得很分散：最可能的「${best(data().probs.noMlp).label}」只有 ${pct(best(data().probs.noMlp).v)}。` })),
-        lz(() => ({ en: `The held-out loss jumps to ${data().loss.noMlp.toFixed(2)}, worse than removing attention. In this model, the MLP does much of the work of turning context into an answer.`, zh: `保留資料上的損失跳到 ${data().loss.noMlp.toFixed(2)}，比拿掉注意力還糟。在這個模型裡，把上下文轉成答案的工作，很大一部分是 MLP 做的。` })),
+        lz(() => ({ en: `The held-out loss jumps to ${data().loss.noMlp.toFixed(2)}, worse than removing attention. In this model, the MLP does much of the work of turning context into an answer.`, zh: `驗證損失跳到 ${data().loss.noMlp.toFixed(2)}，比拿掉注意力還糟。在這個模型裡，把上下文轉成答案的工作，很大一部分是 MLP 做的。` })),
       ],
       changed: [{ sign: '~', text: { en: 'MLP output → 0 (attention back on)', zh: 'MLP 輸出 → 0（注意力恢復）' } }],
     },
@@ -174,9 +175,9 @@ export const residual: Lesson = {
       title: { en: 'Why adding helps deep models learn', zh: '為什麼相加能讓深層模型學得動' },
       body: [
         lz(() => ({ en: `Real models stack dozens of layers. Here are ${DEPTH} random MLP layers, set up the way our model starts. If each layer <i>replaces</i> the vector, the signal shrinks layer after layer, to ${sz(deep().replace.sizes[DEPTH - 1])}. If each layer <i>adds</i>, it survives.`, zh: `真實的模型會疊上幾十層。這裡有 ${DEPTH} 層隨機的 MLP，初始設定和我們的模型一樣。如果每一層都<i>取代</i>向量，訊號會一層一層縮小，最後只剩 ${sz(deep().replace.sizes[DEPTH - 1])}；如果每一層都<i>相加</i>，訊號就能保留下來。` })),
-        lz(() => ({ en: `Learning runs the same path backwards. The <b>gradient</b> (the “which way to change” signal) reaching layer 1 is ${sz(deep().add.grad)} with adding, but only ${sz(deep().replace.grad)} with replacing. Adding gives the signal a straight path through every layer.`, zh: `學習時訊號沿著同一條路往回走。傳到第 1 層的<b>梯度</b>（「該往哪邊改」的訊號），用相加時是 ${sz(deep().add.grad)}，用取代時只有 ${sz(deep().replace.grad)}。相加讓訊號有一條穿過每一層的直達路線。` })),
+        lz(() => ({ en: `Learning runs the same path backwards. The <b>gradient</b> (the “which way to change” signal) reaching layer 1 is ${sz(deep().add.grad)} with adding, but only ${sz(deep().replace.grad)} with replacing. A gradient near 0 means layer 1 gets almost no instruction on how to change, so it stops learning. Adding gives the signal a straight path through every layer.`, zh: `學習時訊號沿著同一條路往回走。傳到第 1 層的<b>梯度</b>（「該往哪邊改」的訊號），用相加時是 ${sz(deep().add.grad)}，用取代時只有 ${sz(deep().replace.grad)}。梯度接近 0，代表第 1 層幾乎收不到「該怎麼改」的指示，也就學不動了。相加讓訊號有一條穿過每一層的直達路線。` })),
       ],
-      callout: { kind: 'insight', text: { en: 'With addition, a layer that has not learned anything yet simply passes the stream through unchanged. Every layer starts as “do no harm”.', zh: '有了加法，一個還沒學到東西的層，頂多就是讓殘差流原封不動地通過。每一層一開始都是「至少不搞砸」。' } },
+      callout: { kind: 'insight', text: { en: 'With addition, even a layer that has learned nothing useful yet cannot erase what came before: its output is added on top. If its output is close to zero, the stream passes through almost unchanged. Every layer starts as “do little harm”.', zh: '有了加法，就算某一層還沒學到有用的東西，也抹不掉前面的內容：它的輸出只是疊加上去。如果它的輸出接近零，殘差流就幾乎原封不動地通過。每一層一開始都是「盡量不搞砸」。' } },
       changed: [{ sign: '+', text: { en: `${DEPTH}-layer test: add vs replace`, zh: `${DEPTH} 層測試：相加 vs 取代` } }],
     },
     {
@@ -185,6 +186,7 @@ export const residual: Lesson = {
       body: [
         { en: 'Each token’s vector flows along a stream. Attention and the MLP read it and <b>add</b> their results: <code>x1 = x + attention</code>, <code>x2 = x1 + MLP</code>.', zh: '每個詞元的向量沿著一條流前進。注意力和 MLP 讀取它，再把結果<b>加</b>回去：<code>x1 = x + 注意力</code>、<code>x2 = x1 + MLP</code>。' },
         { en: 'Adding keeps what the token knew, lets us switch parts off to study them, and gives learning signals a straight path through deep stacks.', zh: '相加保留了詞元原本知道的東西，讓我們可以關掉某個部分來研究它，也讓學習訊號能直達很深的堆疊。' },
+        { en: 'Attention plus the MLP, with their two additions, is called one <b>block</b>. Our model has one block; real models stack many.', zh: '注意力加上 MLP，連同它們的兩次相加，合稱一個<b>區塊（block）</b>。我們的模型只有一個區塊，真實的模型會疊上很多個。' },
       ],
       callout: { kind: 'next', text: { en: 'Next: Layer Normalization. All that adding makes vectors grow; layer normalization keeps their size under control.', zh: '下一課：層正規化。一直相加會讓向量越來越大，層正規化負責把它們的大小控制住。' } },
     },
@@ -274,7 +276,7 @@ export const residual: Lesson = {
         items.push({ k: 'rb' + i, t: 'box', x: bx, y: 210, w: 150, h: 60, label: t(b), tone: part ? 'a' : 'ink' });
         if (i < 4) items.push({ k: 'rba' + i, t: 'arrow', x1: bx + 152, y1: 240, x2: bx + 170, y2: 240 });
       });
-      items.push({ k: 'rt', t: 'text', x: 450, y: 320, text: t({ en: `held-out loss: ${d.loss.normal.toFixed(2)} · no attention ${d.loss.noAtt.toFixed(2)} · no MLP ${d.loss.noMlp.toFixed(2)}`, zh: `保留資料損失：${d.loss.normal.toFixed(2)} · 無注意力 ${d.loss.noAtt.toFixed(2)} · 無 MLP ${d.loss.noMlp.toFixed(2)}` }), size: 14, tone: 'muted', anchor: 'middle', mono: true });
+      items.push({ k: 'rt', t: 'text', x: 450, y: 320, text: t({ en: `held-out loss: ${d.loss.normal.toFixed(2)} · no attention ${d.loss.noAtt.toFixed(2)} · no MLP ${d.loss.noMlp.toFixed(2)}`, zh: `驗證損失：${d.loss.normal.toFixed(2)} · 無注意力 ${d.loss.noAtt.toFixed(2)} · 無 MLP ${d.loss.noMlp.toFixed(2)}` }), size: 14, tone: 'muted', anchor: 'middle', mono: true });
     }
 
     const vec = step === 0 ? d.x : step === 1 ? d.x1 : d.x2;
@@ -283,8 +285,8 @@ export const residual: Lesson = {
       metrics: [
         { label: { en: 'Following', zh: '追蹤對象' }, value: t({ en: 'second “m”', zh: '第二個「m」' }) },
         { label: { en: 'Vector size', zh: '向量大小' }, value: step <= 3 ? size(vec).toFixed(2) : '—' },
-        { label: { en: 'Top prediction', zh: '最可能的下一個' }, value: mode ? `“${best(d.probs[mode]).label}” ${pct(best(d.probs[mode]).v)}` : step >= 7 ? `“${best(d.probs.normal).label}” ${pct(best(d.probs.normal).v)}` : '—' },
-        { label: { en: 'Held-out loss', zh: '保留資料損失' }, value: mode ? d.loss[mode].toFixed(2) : step >= 7 ? d.loss.normal.toFixed(2) : '—' },
+        { label: { en: 'Top prediction', zh: '最可能的下一個' }, value: mode ? q(best(d.probs[mode])) : step >= 7 ? q(best(d.probs.normal)) : '—' },
+        { label: { en: 'Held-out loss', zh: '驗證損失' }, value: mode ? d.loss[mode].toFixed(2) : step >= 7 ? d.loss.normal.toFixed(2) : '—' },
       ],
       items,
       legend: [

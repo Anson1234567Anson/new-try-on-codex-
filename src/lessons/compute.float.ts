@@ -46,3 +46,14 @@ export function bitsF16(v: number): string {
   const frac = Math.round((a / 2 ** e - 1) * 1024);
   return sign + (e + 15).toString(2).padStart(5, '0') + frac.toString(2).padStart(10, '0');
 }
+
+/** The gap from a stored (positive) number to the next larger number the format can store. */
+export function spacing(format: 'fp32' | 'fp16' | 'bf16', v: number): number {
+  const a = Math.abs(v);
+  if (format === 'fp16') {
+    if (a >= 65504) return Infinity;
+    return 2 ** (Math.max(-14, Math.floor(Math.log2(a || 2 ** -24))) - 10);
+  }
+  const e = Math.max(-126, Math.floor(Math.log2(a || 2 ** -149)));
+  return 2 ** (e - (format === 'fp32' ? 23 : 7));
+}

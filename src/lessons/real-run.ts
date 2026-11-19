@@ -1,7 +1,7 @@
 import type { Lesson, Step } from './types';
 import type { Item, Tone } from '../engine/scene';
 import { t, type L } from '../i18n';
-import { NAMES } from '../model/data';
+import { TRAIN_NAMES } from '../model/data';
 import experiments from '../model/experiments.json';
 
 // Reading the logs of real training runs (src/model/experiments.json):
@@ -82,7 +82,7 @@ const MODS: { title: L; take: L }[] = [
   { title: { en: 'Attention', zh: '注意力' }, take: { en: 'each token gathers from earlier ones', zh: '每個詞元從前面的詞元收集資訊' } },
   { title: { en: 'The Transformer Block', zh: 'Transformer 區塊' }, take: { en: 'attention + MLP, added to the stream', zh: '注意力＋MLP，加回殘差流' } },
   { title: { en: 'Training', zh: '訓練' }, take: { en: 'loss, gradients, Adam, learning rate', zh: '損失、梯度、Adam、學習率' } },
-  { title: { en: 'Training at Scale', zh: '大規模訓練' }, take: { en: 'data, compute, checkpoints, fine-tuning', zh: '資料、運算、檢查點、微調' } },
+  { title: { en: 'Training at Scale', zh: '大規模訓練' }, take: { en: 'data, compute, checkpoints, fine-tuning, LoRA, MoE', zh: '資料、運算、檢查點、微調、LoRA、MoE' } },
   { title: { en: 'Whole Systems', zh: '完整系統' }, take: { en: 'build it, train it, read its charts', zh: '組起來、訓練它、讀懂圖表' } },
 ];
 
@@ -95,7 +95,7 @@ function buildSteps(): Step[] {
       short: { en: 'The log', zh: '紀錄' }, chapter: 'problem',
       title: { en: 'A training run leaves a log of numbers', zh: '一次訓練會留下一大串數字' },
       body: [
-        { en: `This is a real log: our tiny GPT trained for ${n0(M.steps)} steps with batches of ${M.batch} names. Every ${M.every} steps it wrote down the learning rate, the training loss, the held-out loss and the gradient norm.`, zh: `這是一份真實的紀錄：我們的迷你 GPT 訓練了 ${n0(M.steps)} 步，每個批次 ${M.batch} 個名字。每 ${M.every} 步，它記下學習率、訓練損失、驗證損失與梯度範數。` },
+        { en: `This is a real log, from <b>the logged run</b>: our tiny GPT trained for ${n0(M.steps)} steps with batches of ${M.batch} names (a separate run from the course model the other lessons use, which trained 6,000 steps on a simpler schedule). Every ${M.every} steps it wrote down the learning rate, the training loss, the held-out loss and the gradient norm.`, zh: `這是一份真實的紀錄，來自<b>紀錄的訓練</b>：我們的迷你 GPT 訓練了 ${n0(M.steps)} 步，每個批次 ${M.batch} 個名字（這和其他課程用的課程模型是不同的兩次訓練；課程模型用較簡單的排程訓練了 6,000 步）。每 ${M.every} 步，它記下學習率、訓練損失、驗證損失與梯度範數。` },
         { en: `That is ${n0(M.train.length)} rows. Nobody reads them as a table. In this lesson you learn to read them as charts, and to spot a healthy run and a broken one.`, zh: `一共 ${n0(M.train.length)} 列。沒有人會把它當表格讀。這一課要學的，是把它畫成圖來讀，並且分辨出健康的訓練和出問題的訓練。` },
       ],
       callout: { kind: 'insight', text: { en: 'Big labs watch exactly these kinds of curves for runs that last weeks. The skills are the same at any size.', zh: '大型實驗室在長達數週的訓練裡，盯著的也正是這類曲線。不論規模大小，看圖的功夫都一樣。' } },
@@ -113,7 +113,7 @@ function buildSteps(): Step[] {
       short: { en: 'Loss', zh: '損失' }, chapter: 'technique',
       title: { en: 'The loss: a fast drop, then a long slow slope', zh: '損失：先快速下降，再緩緩下坡' },
       body: [
-        { en: `Held-out loss starts at ${f3(d.mv[0])} (pure guessing) and is already ${f3(d.at(d.mv, 500))} at step 500. That is ${Math.round(d.dropBy500 * 100)}% of the whole run’s improvement in its first eighth.`, zh: `驗證損失從 ${f3(d.mv[0])}（純粹亂猜）開始，到第 500 步已經是 ${f3(d.at(d.mv, 500))}。整次訓練的進步，有 ${Math.round(d.dropBy500 * 100)}% 發生在最前面的八分之一。` },
+        { en: `Held-out loss (the loss on the 615 names the model never trains on) starts at ${f3(d.mv[0])}, the untrained model, a little worse than pure guessing (${Math.log(27).toFixed(2)}), and is already ${f3(d.at(d.mv, 500))} at step 500. That is ${Math.round(d.dropBy500 * 100)}% of the whole run’s improvement in its first eighth.`, zh: `驗證損失（模型在訓練時從沒看過的 615 個名字上的損失）從未訓練模型的 ${f3(d.mv[0])} 開始，比純粹亂猜（${Math.log(27).toFixed(2)}）還差一點，到第 500 步已經是 ${f3(d.at(d.mv, 500))}。整次訓練的進步，有 ${Math.round(d.dropBy500 * 100)}% 發生在最前面的八分之一。` },
         { en: 'This shape is normal and healthy: easy patterns are learned first, hard ones slowly. The training line is a bit jagged because each point averages only a few batches.', zh: '這種形狀很正常，也很健康：簡單的規律先學會，難的慢慢來。訓練損失的線有點鋸齒，因為每個點只是幾個批次的平均。' },
       ],
       changed: [{ sign: '+', text: { en: 'Training and held-out loss', zh: '訓練損失與驗證損失' } }],
@@ -132,7 +132,7 @@ function buildSteps(): Step[] {
       short: { en: 'Grad norm', zh: '梯度範數' }, chapter: 'technique',
       title: { en: 'The gradient norm: how hard the model is pushed', zh: '梯度範數：模型被推得多用力' },
       body: [
-        { en: 'The <b>gradient norm</b> is the length of the whole gradient: all 3,115 gradients treated as one arrow (Gradients and Backpropagation lesson). Big means the loss is very steep where the model stands.', zh: '<b>梯度範數</b>是整個梯度的長度：把 3,115 個梯度當成同一支箭頭（「梯度與反向傳播」那一課）。數值大，代表模型所在的地方坡度非常陡。' },
+        { en: 'The <b>gradient norm</b> is new here, built from the gradients of the Gradients and Backpropagation lesson: square all 3,115 gradients, add them up, and take the square root. It is the length of the whole gradient as one arrow; big means the loss is very steep where the model stands.', zh: '<b>梯度範數</b>是這裡新出現的概念，由「梯度與反向傳播」那一課的梯度組成：把 3,115 個梯度各自平方、加起來，再開根號。它就是把整個梯度當成一支箭頭時的長度；數值大，代表模型所在的地方坡度非常陡。' },
         { en: `Here it stays between ${d.gnMin.toFixed(2)} and ${d.gnMax.toFixed(2)} for the whole run, drifting up slowly with no sudden jumps. Calm and boring is exactly what you want.`, zh: `在這次訓練裡，它全程都在 ${d.gnMin.toFixed(2)} 到 ${d.gnMax.toFixed(2)} 之間，緩慢往上飄，沒有任何突然的跳動。平靜又無聊，正是你想看到的。` },
       ],
       changed: [{ sign: '+', text: { en: 'Gradient norm chart', zh: '梯度範數圖' } }],
@@ -160,7 +160,7 @@ function buildSteps(): Step[] {
       short: { en: 'Broken', zh: '壞掉' }, chapter: 'problem',
       title: { en: 'Case: a run that blows up', zh: '案例：一次爆掉的訓練' },
       body: [
-        { en: `Now a different real run: a flat learning rate of ${d.H.lr[0]} with no warmup, ${d.H.lr[0] / M.peakLr}× our peak. It trains, but its held-out loss sits higher than the healthy run (${f3(d.hvBefore)} vs ${f3(d.mvSame)} at step ${n0(d.cmpStep)}).`, zh: `換一次真實的訓練：學習率固定在 ${d.H.lr[0]}，沒有暖身，是我們最高值的 ${d.H.lr[0] / M.peakLr} 倍。它還是在學，但驗證損失比健康的那次高（第 ${n0(d.cmpStep)} 步時是 ${f3(d.hvBefore)}，健康的是 ${f3(d.mvSame)}）。` },
+        { en: `Now a different real run (one of the 2,000-step comparison runs from the Learning Rate and Warmup lesson): a flat learning rate of ${d.H.lr[0]} with no warmup, ${d.H.lr[0] / M.peakLr}× our peak. It trains, but its held-out loss sits higher than the healthy run (${f3(d.hvBefore)} vs ${f3(d.mvSame)} at step ${n0(d.cmpStep)}).`, zh: `換一次真實的訓練（「學習率與暖身」那一課 2,000 步的比較實驗之一）：學習率固定在 ${d.H.lr[0]}，沒有暖身，是我們最高值的 ${d.H.lr[0] / M.peakLr} 倍。它還是在學，但驗證損失比健康的那次高（第 ${n0(d.cmpStep)} 步時是 ${f3(d.hvBefore)}，健康的是 ${f3(d.mvSame)}）。` },
         { en: `Then, in the stretch ending at step ${n0(d.spikeStep)}, the loss spikes and becomes NaN (not a number). In the same stretch the gradient norm leaps from under ${d.gnBefore.toFixed(1)} to hundreds, peaking at ${n0(Math.round(d.gnPeak))}. It never recovers: the final held-out loss is ${f3(d.hFinal)}.`, zh: `接著，在截至第 ${n0(d.spikeStep)} 步的那一段，損失暴衝，變成 NaN（不是一個數字）。同一段裡，梯度範數從不到 ${d.gnBefore.toFixed(1)} 一口氣跳到好幾百，最高達 ${n0(Math.round(d.gnPeak))}。之後再也回不來：最後的驗證損失是 ${f3(d.hFinal)}。` },
       ],
       callout: { kind: 'insight', text: { en: `There was a quiet hint first: around step ${n0(d.bumpStep)} the gradient norm briefly rose to ${d.gnBump.toFixed(2)} (typical: ${d.gnTypical.toFixed(2)}) and the held-out loss bumped to ${f3(d.hvBump)}. Bumps like that at a high learning rate are worth taking seriously.`, zh: `其實之前有個小小的徵兆：大約第 ${n0(d.bumpStep)} 步，梯度範數短暫升到 ${d.gnBump.toFixed(2)}（平常約 ${d.gnTypical.toFixed(2)}），驗證損失也跳到 ${f3(d.hvBump)}。在高學習率下出現這種小起伏，就值得認真看待。` } },
@@ -182,7 +182,7 @@ function buildSteps(): Step[] {
         { en: '<b>This lesson</b>: read the learning rate first, then both losses and their gap, then the gradient norm and samples. Calm curves are healthy; spikes and a growing gap are warnings.', zh: '<b>這一課</b>：先讀學習率，再看兩條損失和它們的差距，然後看梯度範數和樣本。平穩的曲線代表健康；暴衝和越來越大的差距是警訊。' },
         { en: `<b>The course</b>: text became ids, ids became vectors, attention and the MLP refined them, and a loop of small corrections found ${n0(M.params)} good numbers. Real language models are this same recipe at a vastly larger scale.`, zh: `<b>整門課</b>：文字變成編號，編號變成向量，注意力與 MLP 一層層加工，再由一個不斷小幅修正的迴圈，找出 ${n0(M.params)} 個好數字。真實的語言模型，就是同一套配方放大到極大的規模。` },
       ],
-      callout: { kind: 'next', text: { en: 'Where next: try reading the code of a small open-source GPT, train one on text you care about, or read the paper that introduced the transformer. You now know every part they talk about.', zh: '接下來：可以試著讀一個小型開源 GPT 的程式碼、用你在乎的文字訓練一個模型，或去讀提出 Transformer 的那篇論文。它們談到的每個零件，你現在都認識了。' } },
+      callout: { kind: 'next', text: { en: 'Where next: try reading the code of a small open-source GPT, train one on text you care about, or read the paper that introduced the transformer, “Attention Is All You Need” (Vaswani and colleagues, 2017). You now know every part they talk about.', zh: '接下來：可以試著讀一個小型開源 GPT 的程式碼、用你在乎的文字訓練一個模型，或去讀提出 Transformer 的那篇論文：〈Attention Is All You Need〉（Vaswani 等人，2017）。它們談到的每個零件，你現在都認識了。' } },
     },
   ];
 }
@@ -338,7 +338,7 @@ export const realRun: Lesson = {
         if (i % 3 < 2) items.push({ k: 'ma' + i, t: 'arrow', x1: x + 262, y1: y + 35, x2: x + 288, y2: y + 35 });
       });
       items.push({ k: 'ma2b', t: 'arrow', x1: 740, y1: 162, x2: 160, y2: 198, tone: 'muted', dashed: true });
-      items.push({ k: 'rs', t: 'text', x: 450, y: 370, anchor: 'middle', size: 24, bold: true, tone: 'a', text: t({ en: `${n0(M.params)} weights · ${n0(NAMES.length)} names · one loop`, zh: `${n0(M.params)} 個權重 · ${n0(NAMES.length)} 個名字 · 一個迴圈` }) });
+      items.push({ k: 'rs', t: 'text', x: 450, y: 370, anchor: 'middle', size: 24, bold: true, tone: 'a', text: t({ en: `${n0(M.params)} weights · ${n0(TRAIN_NAMES.length)} training names · one loop`, zh: `${n0(M.params)} 個權重 · ${n0(TRAIN_NAMES.length)} 個訓練名字 · 一個迴圈` }) });
       items.push({ k: 'rs2', t: 'text', x: 450, y: 400, anchor: 'middle', size: 14.5, tone: 'muted', text: t({ en: 'the same recipe, scaled up, is how real language models are made', zh: '同一套配方放大規模，就是真實語言模型的做法' }) });
     }
 
@@ -353,7 +353,7 @@ export const realRun: Lesson = {
       : step === 9
         ? [
           { label: { en: 'Weights', zh: '權重' }, value: n0(M.params) },
-          { label: { en: 'Names', zh: '名字' }, value: n0(NAMES.length) },
+          { label: { en: 'Training names', zh: '訓練名字' }, value: n0(TRAIN_NAMES.length) },
           { label: { en: 'Training steps', zh: '訓練步數' }, value: n0(M.steps) },
           { label: { en: 'Best held-out', zh: '最佳驗證損失' }, value: f3(d.best) },
         ]

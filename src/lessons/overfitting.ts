@@ -54,16 +54,16 @@ export const overfitting: Lesson = {
       short: { en: 'Too good', zh: '好得可疑' }, chapter: 'problem',
       title: { en: 'A loss that looks too good', zh: '好到可疑的損失' },
       body: [
-        { en: `We train a model on just ${OF_NAMES} names for ${OF_STEPS.toLocaleString()} steps. Its training loss falls to ${f2(lastOf(ofTrain))}. Our main model, trained on thousands of names, never gets below ${f2(Math.min(...mTrain))}.`, zh: `我們只用 ${OF_NAMES} 個名字訓練一個模型 ${OF_STEPS.toLocaleString()} 步。它的訓練損失降到 ${f2(lastOf(ofTrain))}。而我們用幾千個名字訓練的主要模型，損失從沒低於 ${f2(Math.min(...mTrain))}。` },
+        { en: `We train a model on just ${OF_NAMES} names for ${OF_STEPS.toLocaleString()} steps. Its training loss falls to ${f2(lastOf(ofTrain))}. The logged run (our ${M_STEPS.toLocaleString()}-step run on all ${SPLIT.train.toLocaleString()} training names) never gets below ${f2(Math.min(...mTrain))}.`, zh: `我們只用 ${OF_NAMES} 個名字訓練一個模型 ${OF_STEPS.toLocaleString()} 步。它的訓練損失降到 ${f2(lastOf(ofTrain))}。而紀錄的訓練（用全部 ${SPLIT.train.toLocaleString()} 個訓練名字跑了 ${M_STEPS.toLocaleString()} 步）損失從沒低於 ${f2(Math.min(...mTrain))}。` },
         { en: 'So is this a much better model? The training loss only measures the names it practised on. We have not yet asked it about any name it has not seen.', zh: '所以這是個好很多的模型嗎？訓練損失只量了它練習過的那些名字。我們還沒問過它任何沒看過的名字。' },
       ],
     },
     {
-      short: { en: 'Hold out', zh: '留一手' }, chapter: 'technique',
+      short: { en: 'Hold out', zh: '先留下來' }, chapter: 'technique',
       title: { en: 'Keep some names back', zh: '留一些名字不給它看' },
       body: [
         { en: `Before training, we split our ${(SPLIT.train + SPLIT.val).toLocaleString()} names. Every fifth name (${SPLIT.val} of them) goes into the <b>validation set</b> and is never used for training. The other ${SPLIT.train.toLocaleString()} are the <b>training set</b>.`, zh: `訓練之前，先把 ${(SPLIT.train + SPLIT.val).toLocaleString()} 個名字分開。每五個抽一個（共 ${SPLIT.val} 個）放進<b>驗證集（validation set）</b>，完全不拿來訓練。其餘 ${SPLIT.train.toLocaleString()} 個是<b>訓練集（training set）</b>。` },
-        { en: `The small experiment took its ${OF_NAMES} names from the training set. The loss on the validation names, the <b>validation loss</b>, shows how the model does on names it has never seen, which is what we actually care about.`, zh: `這個小實驗的 ${OF_NAMES} 個名字是從訓練集裡挑的。模型在驗證集上的損失，也就是<b>驗證損失</b>，顯示它在從沒看過的名字上表現如何，這才是我們真正在乎的。` },
+        { en: `The small experiment took its ${OF_NAMES} names from the training set. The loss on the validation names, the <b>validation loss</b>, shows how the model does on names it has never seen, which is what we actually care about. It is the “held-out loss” you have met in earlier lessons: the same ${SPLIT.val} names.`, zh: `這個小實驗的 ${OF_NAMES} 個名字是從訓練集裡挑的。模型在驗證集上的損失，也就是<b>驗證損失</b>，顯示它在從沒看過的名字上表現如何，這才是我們真正在乎的。前幾課看到的「驗證損失」就是它：同樣這 ${SPLIT.val} 個名字。` },
       ],
       callout: { kind: 'insight', text: { en: 'Like a teacher keeping the exam questions out of the homework: you only learn whether students understand if the test is new to them.', zh: '就像老師不會把考題放進作業裡：只有考的是新題目，才知道學生是不是真的懂。' } },
       changed: [{ sign: '+', text: { en: `Validation set: ${SPLIT.val} names`, zh: `驗證集：${SPLIT.val} 個名字` } }],
@@ -72,7 +72,7 @@ export const overfitting: Lesson = {
       short: { en: 'The gap', zh: '落差' }, chapter: 'technique',
       title: { en: 'Training loss down, validation loss up', zh: '訓練損失下降，驗證損失上升' },
       body: [
-        { en: `Here is the same run with the validation loss added (red). For the first ${BEST_STEP} steps both fall a little. Then they split: the training loss keeps falling while the validation loss climbs, all the way to ${f2(lastOf(ofVal))}.`, zh: `這是同一次訓練，加上了驗證損失（紅線）。前 ${BEST_STEP} 步兩者都稍微下降，接著就分道揚鑣：訓練損失繼續下降，驗證損失卻一路往上爬，最後到了 ${f2(lastOf(ofVal))}。` },
+        { en: `Here is the same run with the validation loss added (red). For the first ${BEST_STEP} steps both fall (the validation loss only to ${f2(ofVal[bestIdx])}). Then they split: the training loss keeps falling while the validation loss climbs, all the way to ${f2(lastOf(ofVal))}.`, zh: `這是同一次訓練，加上了驗證損失（紅線）。前 ${BEST_STEP} 步兩者都下降（驗證損失只降到 ${f2(ofVal[bestIdx])}），接著就分道揚鑣：訓練損失繼續下降，驗證損失卻一路往上爬，最後到了 ${f2(lastOf(ofVal))}。` },
         { en: `That is far worse than random guessing (${f2(UNIFORM)}). This is <b>overfitting</b>: getting better on the training data while getting worse on new data.`, zh: `這比瞎猜（${f2(UNIFORM)}）還要糟得多。這就是<b>過度擬合（overfitting）</b>：在訓練資料上越來越好，在新資料上卻越來越差。` },
       ],
       changed: [{ sign: '+', text: { en: 'Validation loss', zh: '驗證損失' } }],
@@ -99,7 +99,7 @@ export const overfitting: Lesson = {
       short: { en: 'Healthy run', zh: '健康的訓練' }, chapter: 'solution',
       title: { en: 'A healthy run: the two lines stay close', zh: '健康的訓練：兩條線靠得很近' },
       body: [
-        { en: `Now our main run: the full ${SPLIT.train.toLocaleString()} training names, ${M_STEPS.toLocaleString()} steps. Training and validation loss fall together and stay close. At the end they are ${f2(lastOf(mTrain))} and ${f2(lastOf(mVal))}.`, zh: `現在看我們的主要訓練：完整的 ${SPLIT.train.toLocaleString()} 個訓練名字，${M_STEPS.toLocaleString()} 步。訓練損失和驗證損失一起下降，而且靠得很近。最後分別是 ${f2(lastOf(mTrain))} 和 ${f2(lastOf(mVal))}。` },
+        { en: `Now the logged run: the full ${SPLIT.train.toLocaleString()} training names, ${M_STEPS.toLocaleString()} steps. Training and validation loss fall together and stay close. At the end they are ${f2(lastOf(mTrain))} and ${f2(lastOf(mVal))}.`, zh: `現在看紀錄的訓練：完整的 ${SPLIT.train.toLocaleString()} 個訓練名字，${M_STEPS.toLocaleString()} 步。訓練損失和驗證損失一起下降，而且靠得很近。最後分別是 ${f2(lastOf(mTrain))} 和 ${f2(lastOf(mVal))}。` },
         { en: 'With thousands of names it cannot memorize them all, so the cheapest way to lower the loss is to learn patterns that also work on new names.', zh: '面對幾千個名字，它不可能全部背起來，所以降低損失最省力的方法，就是學會在新名字上也行得通的規律。' },
       ],
       changed: [{ sign: '~', text: { en: `${OF_NAMES} → ${SPLIT.train.toLocaleString()} training names`, zh: `訓練名字 ${OF_NAMES} → ${SPLIT.train.toLocaleString()} 個` } }],
@@ -108,8 +108,8 @@ export const overfitting: Lesson = {
       short: { en: 'Remedies', zh: '對策' }, chapter: 'technique',
       title: { en: 'Three ways to fight overfitting', zh: '對付過度擬合的三種方法' },
       body: [
-        { en: '<b>More data</b>: harder to memorize, as we just saw. <b>Stop early</b>: watch the validation loss and keep the model from the moment it was lowest. In the small run that was only step ' + BEST_STEP + '.', zh: '<b>更多資料</b>：越難背起來，剛剛已經看到了。<b>提早停止</b>：盯著驗證損失，保留它最低那一刻的模型。在那次小實驗裡，最低點只在第 ' + BEST_STEP + ' 步。' },
-        { en: '<b>Smaller model</b>: fewer weights means less room to store every example. The small experiment used a wider MLP, so it had more weights than our main model, for far fewer names.', zh: '<b>更小的模型</b>：權重越少，就越沒有空間把每個例子都存起來。那次小實驗用了更寬的 MLP，權重比主要模型還多，名字卻少得多。' },
+        { en: '<b>More data</b>: harder to memorize, as we just saw. <b>Stop early</b>: watch the validation loss and keep the model from the moment it was lowest. In the small run that was only step ' + BEST_STEP + ', where the validation loss was still ' + f2(ofVal[bestIdx]) + ', barely better than guessing: stopping early limits the harm, but only more data gives a good model.', zh: '<b>更多資料</b>：越難背起來，剛剛已經看到了。<b>提早停止</b>：盯著驗證損失，保留它最低那一刻的模型。在那次小實驗裡，最低點只在第 ' + BEST_STEP + ' 步，那時驗證損失還有 ' + f2(ofVal[bestIdx]) + '，只比亂猜好一點：提早停止能減少傷害，但只有更多資料才能得到好模型。' },
+        { en: '<b>Smaller model</b>: fewer weights means less room to store every example. The small experiment used a wider MLP, so it had more weights than the logged run’s model, for far fewer names.', zh: '<b>更小的模型</b>：權重越少，就越沒有空間把每個例子都存起來。那次小實驗用了更寬的 MLP，權重比紀錄的訓練所用的模型還多，名字卻少得多。' },
       ],
       callout: { kind: 'note', text: { en: 'We did not run a “smaller model” experiment here, so that third remedy is general advice, not something this page measured.', zh: '我們這裡沒有做「更小的模型」的實驗，所以第三種對策是一般原則，不是這一頁量出來的結果。' } },
       changed: [{ sign: '+', text: { en: 'More data · stop early · smaller model', zh: '更多資料 · 提早停止 · 更小的模型' } }],
@@ -118,7 +118,7 @@ export const overfitting: Lesson = {
       short: { en: 'Slow drift', zh: '慢慢漂開' }, chapter: 'problem',
       title: { en: 'Case: even the healthy run drifts apart', zh: '案例：連健康的訓練也會慢慢拉開' },
       body: [
-        { en: `Look closely at the main run. The gap between validation and training loss was ${f2(mGap(1000))} at step 1,000 and ${f2(mGap(M_STEPS))} at step ${M_STEPS.toLocaleString()}. Training loss keeps falling; validation loss has gone flat.`, zh: `仔細看主要訓練。驗證損失和訓練損失的差距，在第 1,000 步是 ${f2(mGap(1000))}，到第 ${M_STEPS.toLocaleString()} 步變成 ${f2(mGap(M_STEPS))}。訓練損失還在下降，驗證損失卻已經持平。` },
+        { en: `Look closely at the logged run. The gap between validation and training loss was ${f2(mGap(1000))} at step 1,000 and ${f2(mGap(M_STEPS))} at step ${M_STEPS.toLocaleString()}. Training loss keeps falling; validation loss has gone flat.`, zh: `仔細看紀錄的訓練。驗證損失和訓練損失的差距，在第 1,000 步是 ${f2(mGap(1000))}，到第 ${M_STEPS.toLocaleString()} 步變成 ${f2(mGap(M_STEPS))}。訓練損失還在下降，驗證損失卻已經持平。` },
         { en: 'This is a mild version of the same thing: late in training, part of the progress is memorizing. It is why we always check the validation loss, not the training loss, to decide when a model is good.', zh: '這是同一件事的輕微版本：訓練後期，有一部分進步其實是在死背。所以判斷模型好不好時，我們一定看驗證損失，而不是訓練損失。' },
       ],
       changed: [{ sign: '~', text: { en: `Gap ${f2(mGap(1000))} → ${f2(mGap(M_STEPS))}`, zh: `差距 ${f2(mGap(1000))} → ${f2(mGap(M_STEPS))}` } }],
@@ -194,7 +194,7 @@ export const overfitting: Lesson = {
       });
       const rows = [
         [t({ en: `small run (${OF_NAMES} names)`, zh: `小實驗（${OF_NAMES} 個名字）` }), f2(lastOf(ofTrain)), f2(lastOf(ofVal)), 'bad'],
-        [t({ en: `main run (${SPLIT.train.toLocaleString()} names)`, zh: `主要訓練（${SPLIT.train.toLocaleString()} 個名字）` }), f2(lastOf(mTrain)), f2(lastOf(mVal)), 'a'],
+        [t({ en: `logged run (${SPLIT.train.toLocaleString()} names)`, zh: `紀錄的訓練（${SPLIT.train.toLocaleString()} 個名字）` }), f2(lastOf(mTrain)), f2(lastOf(mVal)), 'a'],
       ] as const;
       items.push({ k: 'rh1', t: 'text', x: 560, y: 384, anchor: 'middle', size: 14, bold: true, tone: 'muted', text: t({ en: 'training', zh: '訓練' }) });
       items.push({ k: 'rh2', t: 'text', x: 700, y: 384, anchor: 'middle', size: 14, bold: true, tone: 'muted', text: t({ en: 'validation', zh: '驗證' }) });
@@ -217,7 +217,7 @@ export const overfitting: Lesson = {
         { k: 'r3', label: t({ en: 'smaller model', zh: '更小的模型' }), sub: t({ en: `${W.big.toLocaleString()} weights → ${W.small.toLocaleString()}`, zh: `${W.big.toLocaleString()} 個權重 → ${W.small.toLocaleString()}` }) },
       ];
       cards.forEach((c, i) => items.push({ k: c.k, t: 'box', x: 90 + i * 260, y: 370, w: 240, h: 64, label: c.label, sub: c.sub, tone: 'a' }));
-      items.push({ k: 'rpn', t: 'text', x: 470, y: 470, anchor: 'middle', size: 13.5, tone: 'muted', text: t({ en: `small run: ${Math.round(W.big / OF_NAMES)} weights per name · main run: ${(W.small / SPLIT.train).toFixed(1)} per name`, zh: `小實驗：每個名字 ${Math.round(W.big / OF_NAMES)} 個權重 · 主要訓練：每個名字 ${(W.small / SPLIT.train).toFixed(1)} 個` }) });
+      items.push({ k: 'rpn', t: 'text', x: 470, y: 470, anchor: 'middle', size: 13.5, tone: 'muted', text: t({ en: `small run: ${Math.round(W.big / OF_NAMES)} weights per name · logged run: ${(W.small / SPLIT.train).toFixed(1)} per name`, zh: `小實驗：每個名字 ${Math.round(W.big / OF_NAMES)} 個權重 · 紀錄的訓練：每個名字 ${(W.small / SPLIT.train).toFixed(1)} 個` }) });
     }
 
     const small = overfitChart;

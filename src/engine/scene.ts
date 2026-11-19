@@ -12,7 +12,11 @@ export type Item =
   | { k: string; t: 'arrow'; x1: number; y1: number; x2: number; y2: number; tone?: Tone; dashed?: boolean }
   | { k: string; t: 'box'; x: number; y: number; w: number; h: number; label?: string; sub?: string; tone?: Tone; active?: boolean }
   | { k: string; t: 'chart'; x: number; y: number; w: number; h: number; series: { pts: number[]; tone: Tone }[]; ymin: number; ymax: number; xmax: number; every: number; xlabel: string; ylabel: string; guide?: { y: number; label: string } }
-  | { k: string; t: 'bars'; x: number; y: number; w: number; h: number; items: { label: string; v: number; hi?: boolean }[]; title?: string };
+  | { k: string; t: 'bars'; x: number; y: number; w: number; h: number; items: { label: string; v: number; hi?: boolean }[]; title?: string }
+  /** A free line through points (in diagram units, relative to x, y). */
+  | { k: string; t: 'path'; x: number; y: number; pts: [number, number][]; tone?: Tone; width?: number; dashed?: boolean; closed?: boolean; fill?: boolean }
+  /** A dot, optionally labelled. */
+  | { k: string; t: 'dot'; x: number; y: number; r?: number; tone?: Tone; label?: string };
 
 export const W = 900;
 export const H = 520;
@@ -100,6 +104,13 @@ function inner(it: Item): string {
         <text class="s-axis" x="0" y="${it.h + 22}">0</text>`;
       return s;
     }
+    case 'path': {
+      if (!it.pts.length) return '';
+      const d = it.pts.map(([px, py], i) => `${i ? 'L' : 'M'}${n1(px)},${n1(py)}`).join(' ') + (it.closed ? ' Z' : '');
+      return `<path class="s-path tone-line-${it.tone ?? 'ink'} ${it.fill ? `s-path-fill tone-fill-${it.tone ?? 'ink'}` : ''}" d="${d}" stroke-width="${it.width ?? 2}" ${it.dashed ? 'stroke-dasharray="5 5"' : ''}/>`;
+    }
+    case 'dot':
+      return `<circle class="tone-fill-${it.tone ?? 'a'} s-dot" r="${it.r ?? 6}"/>${it.label ? `<text class="s-sub" x="${(it.r ?? 6) + 6}" y="4">${esc(it.label)}</text>` : ''}`;
     case 'bars': {
       const max = Math.max(0.01, ...it.items.map((b) => b.v));
       const bw = it.w / it.items.length;

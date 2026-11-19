@@ -3,6 +3,7 @@ import type { Item, Tone } from '../engine/scene';
 import { t } from '../i18n';
 import { TRAIN_NAMES, VAL_NAMES } from '../model/data';
 import experiments from '../model/experiments.json';
+import { endsA as endsAOf, finish, newRun, writeNames } from './fine-tuning.run';
 
 // Real runs from scripts/experiments.ts: the shipped (pretrained) model fine-tuned on 40 names
 // that end in "a", compared with a new model trained only on those 40 names.
@@ -19,6 +20,15 @@ const fmt = (n: number) => n.toLocaleString('en-US');
 const last = (a: number[]) => a[a.length - 1];
 const SAMPLES = { base: FT.baseSamples, full: FT.full.samples['80'], scratch: FT.scratch.samples['80'] };
 const copied = SAMPLES.full.filter((n) => FT_NAMES.includes(n));
+// The fine-tuned model at its best step, replayed in the browser exactly as the experiment ran it
+// (the experiment only wrote names at the last step).
+let bestCache: { endsA: number; samples: string[]; val: number } | undefined;
+const AT_BEST = () => bestCache ??= (() => {
+  const r = finish(newRun(0, FT.full.lr[0]), BEST.full.step, FT.full.every);
+  return { endsA: endsAOf(r.model), samples: writeNames(r.model), val: r.val[r.val.length - 1] };
+})();
+const lz = (f: () => { en: string; zh: string }) => ({ get en() { return f().en; }, get zh() { return f().zh; } });
+const ZOOM = 16; // steps shown before the overfitting is revealed
 
 export const fineTuning: Lesson = {
   id: 'fine-tuning',
@@ -50,7 +60,7 @@ export const fineTuning: Lesson = {
       short: { en: 'Pretraining', zh: '預訓練' }, chapter: 'technique',
       title: { en: 'Pretraining: learn the general skill', zh: '預訓練：學會通用的能力' },
       body: [
-        { en: `What we have done so far is <b>pretraining</b>: training on all ${fmt(TRAIN_NAMES.length)} training names, 6,000 steps, to predict the next letter.`, zh: `我們到目前為止做的，就是<b>預訓練</b>：用全部 ${fmt(TRAIN_NAMES.length)} 個訓練名字，訓練 6,000 步，學習預測下一個字母。` },
+        { en: `What we have done so far is <b>pretraining</b>: training on all ${fmt(TRAIN_NAMES.length)} training names to predict the next letter. Our starting point is <b>the course model</b>, the one the other lessons run: 6,000 steps with batches of 32 names.`, zh: `我們到目前為止做的，就是<b>預訓練</b>：用全部 ${fmt(TRAIN_NAMES.length)} 個訓練名字，學習預測下一個字母。我們的起點是<b>課程模型</b>，也就是其他課程現場執行的那個模型：訓練了 6,000 步，每個批次 32 個名字。` },
         { en: 'The model learned how names work in general: which letters follow which, how long names are, how they end. That knowledge is useful for any kind of name.', zh: '模型因此學到名字的一般規律：哪些字母常接在哪些字母後面、名字大概多長、怎麼結尾。這些知識對任何一種名字都有用。' },
       ],
       changed: [{ sign: '+', text: { en: 'Pretrained model: all training names', zh: '預訓練模型：全部訓練名字' } }],
@@ -60,7 +70,7 @@ export const fineTuning: Lesson = {
       title: { en: 'Fine-tuning: keep training on a small set', zh: '微調：在一小份資料上繼續訓練' },
       body: [
         { en: `<b>Fine-tuning</b> means: start from the pretrained weights and keep training, but only on the new examples. Ours are these ${FT.trainNames} training names that end in “a”.`, zh: `<b>微調</b>的意思是：從預訓練好的權重出發，繼續訓練，但只用新的範例。我們的範例就是這 ${FT.trainNames} 個以「a」結尾的訓練名字。` },
-        { en: `We use a small learning rate (0.003) so the model adjusts gently instead of forgetting what it knows. To check it fairly we use the ${VAL_A} held-out names ending in “a”.`, zh: `我們用很小的學習率（0.003），讓模型溫和地調整，而不是忘掉它已經會的東西。為了公平檢查，我們用保留集中 ${VAL_A} 個以「a」結尾的名字。` },
+        { en: `We use a small learning rate (0.003) so the model adjusts gently instead of forgetting what it knows. To check it fairly we use the ${VAL_A} held-out names ending in “a” (held-out names: names the model never trains on).`, zh: `我們用很小的學習率（0.003），讓模型溫和地調整，而不是忘掉它已經會的東西。為了公平檢查，我們用驗證集中 ${VAL_A} 個以「a」結尾的名字（驗證集：模型訓練時從沒看過的名字）。` },
       ],
       changed: [{ sign: '+', text: { en: `${FT.trainNames} fine-tuning names`, zh: `${FT.trainNames} 個微調用的名字` } }],
     },
@@ -68,17 +78,17 @@ export const fineTuning: Lesson = {
       short: { en: 'Fine-tune', zh: '微調' }, chapter: 'solution',
       title: { en: 'A few steps change the habit', zh: '短短幾步就改變了習慣' },
       body: [
-        { en: `The held-out loss on names ending in “a” drops from ${FT.baseValLoss.toFixed(2)} to <b>${BEST.full.loss.toFixed(2)}</b> after just ${BEST.full.step} steps.`, zh: `在以「a」結尾的保留名字上，損失只花了 ${BEST.full.step} 步，就從 ${FT.baseValLoss.toFixed(2)} 降到 <b>${BEST.full.loss.toFixed(2)}</b>。` },
-        { en: `After the ${STEPS} steps, <b>${pct(FT.full.endsA)}</b> of the names it writes end in “a”, up from ${pct(FT.baseEndsA)}.`, zh: `跑完 ${STEPS} 步後，它寫的名字有 <b>${pct(FT.full.endsA)}</b> 以「a」結尾，原本只有 ${pct(FT.baseEndsA)}。` },
+        { en: `The held-out loss (the loss on held-out names ending in “a”) drops from ${FT.baseValLoss.toFixed(2)} to <b>${BEST.full.loss.toFixed(2)}</b> after just ${BEST.full.step} steps. That is its lowest point, so this is the model we keep.`, zh: `驗證損失（在驗證集中以「a」結尾的名字上的損失）只花了 ${BEST.full.step} 步，就從 ${FT.baseValLoss.toFixed(2)} 降到 <b>${BEST.full.loss.toFixed(2)}</b>。這是它的最低點，所以我們留下的就是這個模型。` },
+        lz(() => ({ en: `This step-${BEST.full.step} model, replayed here in your browser, writes <b>${pct(AT_BEST().endsA)}</b> of its names ending in “a”, up from ${pct(FT.baseEndsA)}. Its names below still look like names.`, zh: `這個第 ${BEST.full.step} 步的模型（就在你的瀏覽器裡重跑出來）寫的名字有 <b>${pct(AT_BEST().endsA)}</b> 以「a」結尾，原本只有 ${pct(FT.baseEndsA)}。下面它寫的名字，看起來仍然像名字。` })),
       ],
-      changed: [{ sign: '~', text: { en: `Ends in “a”: ${pct(FT.baseEndsA)} → ${pct(FT.full.endsA)}`, zh: `以「a」結尾：${pct(FT.baseEndsA)} → ${pct(FT.full.endsA)}` } }],
+      changed: [{ sign: '~', text: lz(() => ({ en: `Ends in “a”: ${pct(FT.baseEndsA)} → ${pct(AT_BEST().endsA)} (step ${BEST.full.step})`, zh: `以「a」結尾：${pct(FT.baseEndsA)} → ${pct(AT_BEST().endsA)}（第 ${BEST.full.step} 步）` })) }],
     },
     {
       short: { en: 'vs scratch', zh: '對照從頭訓練' }, chapter: 'technique',
       title: { en: 'Why not just train on the 40 names?', zh: '為什麼不直接用這 40 個名字訓練？' },
       body: [
-        { en: `For comparison, a brand-new model trained only on the same ${FT.trainNames} names (amber) starts from guessing and its best held-out loss is <b>${BEST.scratch.loss.toFixed(2)}</b>, clearly worse than ${BEST.full.loss.toFixed(2)}.`, zh: `做個對照：一個全新的模型只用同樣這 ${FT.trainNames} 個名字訓練（琥珀色），它從亂猜開始，在保留集上最好的損失是 <b>${BEST.scratch.loss.toFixed(2)}</b>，明顯比 ${BEST.full.loss.toFixed(2)} 差。` },
-        { en: `It does learn the ending (${pct(FT.scratch.endsA)} end in “a”), but 40 names cannot teach it everything else about names. The fine-tuned model brings that knowledge from pretraining.`, zh: `它確實學會了結尾（${pct(FT.scratch.endsA)} 以「a」結尾），但 40 個名字教不了它名字的其他規律。微調的模型則把這些知識從預訓練帶了過來。` },
+        { en: `For comparison, a brand-new model trained only on the same ${FT.trainNames} names (amber) starts from random weights and its best held-out loss is <b>${BEST.scratch.loss.toFixed(2)}</b>, clearly worse than ${BEST.full.loss.toFixed(2)}.`, zh: `做個對照：一個全新的模型只用同樣這 ${FT.trainNames} 個名字訓練（琥珀色），它從隨機權重開始，最好的驗證損失是 <b>${BEST.scratch.loss.toFixed(2)}</b>，明顯比 ${BEST.full.loss.toFixed(2)} 差。` },
+        { en: `It does learn the ending (by step ${STEPS}, ${pct(FT.scratch.endsA)} of its names end in “a”), but 40 names cannot teach it everything else about names. The fine-tuned model brings that knowledge from pretraining.`, zh: `它確實學會了結尾（到第 ${STEPS} 步，${pct(FT.scratch.endsA)} 的名字以「a」結尾），但 40 個名字教不了它名字的其他規律。微調的模型則把這些知識從預訓練帶了過來。` },
       ],
       callout: { kind: 'insight', text: { en: 'Pretraining does the expensive general learning once. Fine-tuning reuses it, so a small dataset is enough.', zh: '預訓練一次做完昂貴的通用學習；微調重複利用這些成果，所以少量資料就夠了。' } },
       changed: [{ sign: '+', text: { en: 'From-scratch model for comparison', zh: '加入從頭訓練的模型做對照' } }],
@@ -87,26 +97,26 @@ export const fineTuning: Lesson = {
       short: { en: 'Case: too long', zh: '案例：練太久' }, chapter: 'problem',
       title: { en: 'Case: fine-tune too long and it memorizes', zh: '案例：微調太久就會死背' },
       body: [
-        { en: `Keep going and the training loss keeps falling (to ${last(FT.full.train).toFixed(2)}), but the held-out loss turns around after step ${BEST.full.step} and climbs to ${last(FT.full.val).toFixed(2)}. That is <b>overfitting</b>: 40 names are easy to memorize.`, zh: `繼續練下去，訓練損失一直下降（降到 ${last(FT.full.train).toFixed(2)}），但保留集損失在第 ${BEST.full.step} 步後掉頭，一路爬到 ${last(FT.full.val).toFixed(2)}。這就是<b>過度擬合</b>：40 個名字太容易背了。` },
-        { en: `You can see it in the names: ${copied.length} of its 8 names at step ${STEPS} (${copied.join(', ')}) are copied straight from the 40. So we stop early, at the lowest held-out loss.`, zh: `從名字也看得出來：第 ${STEPS} 步時它寫的 8 個名字裡，有 ${copied.length} 個（${copied.join('、')}）是直接從那 40 個名字抄來的。所以我們要及早停止，停在保留集損失最低的地方。` },
+        { en: `Keep going and the training loss keeps falling (to ${last(FT.full.train).toFixed(2)}), but the held-out loss turns around after step ${BEST.full.step} and climbs to ${last(FT.full.val).toFixed(2)}: worse than the pretrained model we started from (${FT.baseValLoss.toFixed(2)}, the dashed line). That is <b>overfitting</b>: 40 names are easy to memorize.`, zh: `繼續練下去，訓練損失一直下降（降到 ${last(FT.full.train).toFixed(2)}），但驗證損失在第 ${BEST.full.step} 步後掉頭，一路爬到 ${last(FT.full.val).toFixed(2)}，比我們出發時的預訓練模型（${FT.baseValLoss.toFixed(2)}，虛線）還差。這就是<b>過度擬合</b>：40 個名字太容易背了。` },
+        { en: `It still writes ${pct(FT.full.endsA)} of its names ending in “a”, but ${copied.length} of its 8 names at step ${STEPS} (${copied.join(', ')}) are copied straight from the 40. So we stop early, at the lowest held-out loss.`, zh: `它寫的名字仍有 ${pct(FT.full.endsA)} 以「a」結尾，但第 ${STEPS} 步時它寫的 8 個名字裡，有 ${copied.length} 個（${copied.join('、')}）是直接從那 40 個名字抄來的。所以我們要及早停止，停在驗證損失最低的地方。` },
       ],
-      callout: { kind: 'note', text: { en: 'The from-scratch model overfits too: its held-out loss is lowest at step 24 and then rises.', zh: '從頭訓練的模型也會過度擬合：它的保留集損失在第 24 步最低，之後就上升。' } },
+      callout: { kind: 'note', text: { en: `The from-scratch model overfits too: its held-out loss is lowest at step ${BEST.scratch.step} and then rises.`, zh: `從頭訓練的模型也會過度擬合：它的驗證損失在第 ${BEST.scratch.step} 步最低，之後就上升。` } },
     },
     {
       short: { en: 'Samples', zh: '名字範例' }, chapter: 'technique',
       title: { en: 'Read what each model writes', zh: '讀讀看每個模型寫了什麼' },
       body: [
-        { en: 'Same random seed, three models. The pretrained model writes all kinds of endings. The fine-tuned one writes names ending in “a” that still look like names.', zh: '同一個亂數種子，三個模型。預訓練模型寫出各式各樣的結尾；微調後的模型寫出以「a」結尾、而且仍然像名字的名字。' },
+        { en: `Same random seed, three models. The pretrained model writes all kinds of endings. The fine-tuned one, kept at its best step (${BEST.full.step}), writes mostly names ending in “a” that still look like names.`, zh: `同一個亂數種子，三個模型。預訓練模型寫出各式各樣的結尾；微調後的模型（留在最佳的第 ${BEST.full.step} 步）大多寫出以「a」結尾、而且仍然像名字的名字。` },
         { en: 'The from-scratch model also ends in “a”, but produces odd ones like <code>seictra</code> and <code>narja</code>: it never learned the rest of what makes a name.', zh: '從頭訓練的模型也以「a」結尾，卻寫出 <code>seictra</code>、<code>narja</code> 這種怪名字：它從沒學過名字其他方面的規律。' },
       ],
-      callout: { kind: 'note', text: { en: `These samples were written after all ${STEPS} steps, past the best point, so some are memorized.`, zh: `這些範例是跑完全部 ${STEPS} 步之後寫的，已經超過最佳點，所以有些是背下來的。` } },
+      callout: { kind: 'note', text: { en: `The from-scratch names were written after all ${STEPS} steps, past its best point, so some may be memorized.`, zh: `從頭訓練的名字是跑完全部 ${STEPS} 步之後寫的，已經超過它的最佳點，所以有些可能是背下來的。` } },
     },
     {
       short: { en: 'Chat assistants', zh: '聊天助理' }, chapter: 'technique',
       title: { en: 'The same recipe makes chat assistants', zh: '聊天助理也是同一套做法' },
       body: [
         { en: 'A chat assistant starts as a model <b>pretrained</b> on a huge amount of text to predict the next token. That model knows a lot of language, but it just continues text.', zh: '聊天助理一開始，是一個用海量文字<b>預訓練</b>、學會預測下一個詞元的模型。這個模型懂很多語言知識，但它只會把文字接下去。' },
-        { en: 'It is then <b>fine-tuned</b> on a much smaller set of example conversations written by people, and often further trained with human feedback. InstructGPT (2022) did this to GPT-3.', zh: '接著，再用一份小得多、由人撰寫的對話範例來<b>微調</b>它，通常還會再用人類的回饋進一步訓練。InstructGPT（2022）就是這樣改造 GPT-3 的。' },
+        { en: 'It is then <b>fine-tuned</b> on a much smaller set of example conversations written by people, and often further trained with human feedback (<b>RLHF</b>, reinforcement learning from human feedback). InstructGPT (2022) did this to GPT-3.', zh: '接著，再用一份小得多、由人撰寫的對話範例來<b>微調</b>它，通常還會再用人類的回饋進一步訓練（<b>RLHF</b>，基於人類回饋的強化學習）。InstructGPT（2022）就是這樣改造 GPT-3 的。' },
       ],
       callout: { kind: 'note', text: { en: 'In the InstructGPT paper, people preferred the answers of a 1.3-billion-weight fine-tuned model over those of the 175-billion-weight GPT-3.', zh: '在 InstructGPT 的論文中，人們比較喜歡一個 13 億權重、經過微調的模型的回答，勝過 1,750 億權重的 GPT-3。' } },
     },
@@ -114,9 +124,9 @@ export const fineTuning: Lesson = {
       short: { en: 'Recap', zh: '回顧' }, chapter: 'recap',
       title: { en: 'Learn broadly, then specialize', zh: '先廣泛學習，再專精' },
       body: [
-        { en: `<b>Pretraining</b>: lots of general data, learns how names (or language) work.<br><b>Fine-tuning</b>: continue on a small, specific set: “a” endings ${pct(FT.baseEndsA)} → ${pct(FT.full.endsA)}.<br><b>Better than scratch</b>: held-out loss ${BEST.full.loss.toFixed(2)} vs ${BEST.scratch.loss.toFixed(2)}.<br><b>Stop early</b>: small sets are memorized fast.`, zh: `<b>預訓練</b>：大量通用資料，學會名字（或語言）的規律。<br><b>微調</b>：在一小份特定資料上繼續訓練：以「a」結尾 ${pct(FT.baseEndsA)} → ${pct(FT.full.endsA)}。<br><b>勝過從頭訓練</b>：保留集損失 ${BEST.full.loss.toFixed(2)} 對 ${BEST.scratch.loss.toFixed(2)}。<br><b>及早停止</b>：小資料很快就會被背下來。` },
+        lz(() => ({ en: `<b>Pretraining</b>: lots of general data, learns how names (or language) work.<br><b>Fine-tuning</b>: continue on a small, specific set: “a” endings ${pct(FT.baseEndsA)} → ${pct(AT_BEST().endsA)} at the best step (${BEST.full.step}).<br><b>Better than scratch</b>: held-out loss ${BEST.full.loss.toFixed(2)} vs ${BEST.scratch.loss.toFixed(2)}.<br><b>Stop early</b>: small sets are memorized fast.`, zh: `<b>預訓練</b>：大量通用資料，學會名字（或語言）的規律。<br><b>微調</b>：在一小份特定資料上繼續訓練：以「a」結尾 ${pct(FT.baseEndsA)} → ${pct(AT_BEST().endsA)}（最佳的第 ${BEST.full.step} 步）。<br><b>勝過從頭訓練</b>：驗證損失 ${BEST.full.loss.toFixed(2)} 對 ${BEST.scratch.loss.toFixed(2)}。<br><b>及早停止</b>：小資料很快就會被背下來。` })),
       ],
-      callout: { kind: 'next', text: { en: 'Next: LoRA. Fine-tuning changed all 3,115 weights. Could a small add-on do the same job?', zh: '下一課：LoRA。這次微調改動了全部 3,115 個權重。能不能只靠一個小小的外掛做到同樣的事？' } },
+      callout: { kind: 'next', text: { en: 'Next: LoRA. Fine-tuning changed all 3,115 weights. Could a small add-on do the same job?', zh: '下一課：LoRA。這次微調改動了全部 3,115 個權重。能不能只靠一個小小的附加模組做到同樣的事？' } },
     },
   ],
 
@@ -129,19 +139,20 @@ export const fineTuning: Lesson = {
       names.forEach((n, i) => items.push({ k: k + i, t: 'box', x: 40 + i * 104, y, w: 96, h: 40, label: n, tone: endsA(n) ? tone : 'ink' }));
     };
     const endsBars = (shown: ('base' | 'full' | 'scratch')[], x: number, y: number, w: number, h: number) => {
-      const lab = { base: t({ en: 'pretrained', zh: '預訓練' }), full: t({ en: 'fine-tuned', zh: '微調後' }), scratch: t({ en: 'scratch', zh: '從頭訓練' }) };
-      const v = { base: FT.baseEndsA, full: FT.full.endsA, scratch: FT.scratch.endsA };
+      const lab = { base: t({ en: 'pretrained', zh: '預訓練' }), full: t({ en: `tuned @${BEST.full.step}`, zh: `微調 @${BEST.full.step}` }), scratch: t({ en: `scratch @${STEPS}`, zh: `從頭 @${STEPS}` }) };
+      const v = { base: FT.baseEndsA, full: AT_BEST().endsA, scratch: FT.scratch.endsA };
       items.push({ k: 'ebar', t: 'bars', x, y, w, h, items: shown.map((s) => ({ label: lab[s], v: v[s], hi: s === 'full' })), title: t({ en: 'names ending in “a”', zh: '以「a」結尾的名字' }) });
     };
-    const chart = (series: { pts: number[]; tone: Tone }[], ymin = 0.5, ymax = 3.5) => {
+    const chart = (series: { pts: number[]; tone: Tone }[], ymin = 0.5, ymax = 3.5, xmax = STEPS) => {
+      const cut = xmax / FT.full.every + 1;
       items.push({
-        k: 'chart', t: 'chart', x: 80, y: 50, w: 480, h: 250, ymin, ymax, xmax: STEPS, every: FT.full.every, series,
-        xlabel: t({ en: 'fine-tuning steps', zh: '微調步數' }), ylabel: t({ en: 'loss on held-out names ending in “a”', zh: '以「a」結尾的保留名字上的損失' }),
+        k: 'chart', t: 'chart', x: 80, y: 50, w: 480, h: 250, ymin, ymax, xmax, every: FT.full.every, series: series.map((x) => ({ ...x, pts: x.pts.slice(0, cut) })),
+        xlabel: t({ en: 'fine-tuning steps', zh: '微調步數' }), ylabel: t({ en: 'loss on held-out names ending in “a”', zh: '驗證集中以「a」結尾的名字上的損失' }),
         guide: { y: FT.baseValLoss, label: t({ en: `pretrained · ${FT.baseValLoss.toFixed(2)}`, zh: `預訓練 · ${FT.baseValLoss.toFixed(2)}` }) },
       });
     };
-    const bestMark = (k: string, b: { loss: number; step: number }, tone: Tone, ymin = 0.5, ymax = 3.5) => {
-      const x = 80 + (b.step / STEPS) * 480, y = 50 + 250 - ((b.loss - ymin) / (ymax - ymin)) * 250;
+    const bestMark = (k: string, b: { loss: number; step: number }, tone: Tone, ymin = 0.5, ymax = 3.5, xmax = STEPS) => {
+      const x = 80 + (b.step / xmax) * 480, y = 50 + 250 - ((b.loss - ymin) / (ymax - ymin)) * 250;
       items.push({ k, t: 'arrow', x1: x, y1: y + 40, x2: x, y2: y + 6, tone });
       items.push({ k: k + 't', t: 'text', x, y: y + 56, text: t({ en: `best ${b.loss.toFixed(2)} @ ${b.step}`, zh: `最佳 ${b.loss.toFixed(2)} @ ${b.step}` }), size: 13, anchor: 'middle', tone, bold: true });
     };
@@ -183,14 +194,15 @@ export const fineTuning: Lesson = {
     if (step === 3 || step === 4) {
       const series: { pts: number[]; tone: Tone }[] = [{ pts: FT.full.val, tone: 'a' }];
       if (step === 4) series.unshift({ pts: FT.scratch.val, tone: 'b' });
-      chart(series, 1.5, 3.5);
-      bestMark('bm', BEST.full, 'a', 1.5, 3.5);
-      if (step === 4) bestMark('bs', BEST.scratch, 'b', 1.5, 3.5);
+      const xmax = step === 3 ? ZOOM : 2 * ZOOM;
+      chart(series, 1.5, 3.5, xmax);
+      bestMark('bm', BEST.full, 'a', 1.5, 3.5, xmax);
+      if (step === 4) bestMark('bs', BEST.scratch, 'b', 1.5, 3.5, xmax);
       endsBars(step === 3 ? ['base', 'full'] : ['base', 'full', 'scratch'], 620, 60, 250, 250);
-      sampleRow('s', step === 3 ? SAMPLES.full : SAMPLES.scratch, 410, step === 3
-        ? t({ en: `fine-tuned model, after ${STEPS} steps:`, zh: `微調後的模型，跑完 ${STEPS} 步：` })
+      sampleRow('s', step === 3 ? AT_BEST().samples : SAMPLES.scratch, 410, step === 3
+        ? t({ en: `fine-tuned model at step ${BEST.full.step} (its best):`, zh: `微調後的模型，第 ${BEST.full.step} 步（最佳點）：` })
         : t({ en: `from-scratch model, after ${STEPS} steps:`, zh: `從頭訓練的模型，跑完 ${STEPS} 步：` }), step === 3 ? 'a' : 'b');
-      ends = pct(step === 3 ? FT.full.endsA : FT.scratch.endsA);
+      ends = step === 3 ? pct(AT_BEST().endsA) : `${pct(FT.scratch.endsA)} @${STEPS}`;
       loss = (step === 3 ? BEST.full.loss : BEST.scratch.loss).toFixed(2);
       data = String(FT.trainNames);
       steps = String(step === 3 ? BEST.full.step : BEST.scratch.step);
@@ -199,8 +211,8 @@ export const fineTuning: Lesson = {
     if (step === 5) {
       chart([{ pts: FT.full.train, tone: 'muted' }, { pts: FT.full.val, tone: 'a' }], 0.5, 2.5);
       bestMark('bm', BEST.full, 'a', 0.5, 2.5);
-      items.push({ k: 'stop', t: 'box', x: 620, y: 70, w: 250, h: 70, label: t({ en: `stop at step ${BEST.full.step}`, zh: `在第 ${BEST.full.step} 步停下` }), sub: t({ en: `held-out ${BEST.full.loss.toFixed(2)}`, zh: `保留集 ${BEST.full.loss.toFixed(2)}` }), tone: 'a' });
-      items.push({ k: 'over', t: 'box', x: 620, y: 170, w: 250, h: 70, label: t({ en: `step ${STEPS}: held-out ${last(FT.full.val).toFixed(2)}`, zh: `第 ${STEPS} 步：保留集 ${last(FT.full.val).toFixed(2)}` }), sub: t({ en: `training loss ${last(FT.full.train).toFixed(2)}`, zh: `訓練損失 ${last(FT.full.train).toFixed(2)}` }), tone: 'bad' });
+      items.push({ k: 'stop', t: 'box', x: 620, y: 70, w: 250, h: 70, label: t({ en: `stop at step ${BEST.full.step}`, zh: `在第 ${BEST.full.step} 步停下` }), sub: t({ en: `held-out ${BEST.full.loss.toFixed(2)}`, zh: `驗證 ${BEST.full.loss.toFixed(2)}` }), tone: 'a' });
+      items.push({ k: 'over', t: 'box', x: 620, y: 170, w: 250, h: 70, label: t({ en: `step ${STEPS}: held-out ${last(FT.full.val).toFixed(2)}`, zh: `第 ${STEPS} 步：驗證 ${last(FT.full.val).toFixed(2)}` }), sub: t({ en: `training loss ${last(FT.full.train).toFixed(2)}`, zh: `訓練損失 ${last(FT.full.train).toFixed(2)}` }), tone: 'bad' });
       items.push({ k: 'sl', t: 'text', x: 40, y: 400, text: t({ en: `fine-tuned at step ${STEPS} · red = copied from the 40 training names`, zh: `第 ${STEPS} 步的微調模型 · 紅色 = 直接抄自 40 個訓練名字` }), size: 14, tone: 'muted' });
       SAMPLES.full.forEach((n, i) => items.push({ k: 's' + i, t: 'box', x: 40 + i * 104, y: 410, w: 96, h: 40, label: n, tone: FT_NAMES.includes(n) ? 'bad' : 'ink' }));
       ends = pct(FT.full.endsA); loss = last(FT.full.val).toFixed(2); data = String(FT.trainNames); steps = String(STEPS);
@@ -208,10 +220,10 @@ export const fineTuning: Lesson = {
 
     if (step === 6) {
       sampleRow('b', SAMPLES.base, 70, t({ en: `pretrained · ${pct(FT.baseEndsA)} end in “a”`, zh: `預訓練 · ${pct(FT.baseEndsA)} 以「a」結尾` }));
-      sampleRow('s', SAMPLES.full, 200, t({ en: `fine-tuned · ${pct(FT.full.endsA)} end in “a”`, zh: `微調後 · ${pct(FT.full.endsA)} 以「a」結尾` }));
-      sampleRow('c', SAMPLES.scratch, 330, t({ en: `from scratch · ${pct(FT.scratch.endsA)} end in “a”`, zh: `從頭訓練 · ${pct(FT.scratch.endsA)} 以「a」結尾` }), 'b');
+      sampleRow('s', AT_BEST().samples, 200, t({ en: `fine-tuned, step ${BEST.full.step} · ${pct(AT_BEST().endsA)} end in “a”`, zh: `微調後，第 ${BEST.full.step} 步 · ${pct(AT_BEST().endsA)} 以「a」結尾` }));
+      sampleRow('c', SAMPLES.scratch, 330, t({ en: `from scratch, step ${STEPS} · ${pct(FT.scratch.endsA)} end in “a”`, zh: `從頭訓練，第 ${STEPS} 步 · ${pct(FT.scratch.endsA)} 以「a」結尾` }), 'b');
       items.push({ k: 'sn', t: 'text', x: 450, y: 450, text: t({ en: 'same seed for all three · 400 samples each for the percentages', zh: '三者使用同一個亂數種子 · 百分比各用 400 個名字計算' }), size: 14, tone: 'muted', anchor: 'middle' });
-      ends = pct(FT.full.endsA); data = String(FT.trainNames); steps = String(STEPS); loss = last(FT.full.val).toFixed(2);
+      ends = pct(AT_BEST().endsA); data = String(FT.trainNames); steps = String(BEST.full.step); loss = BEST.full.loss.toFixed(2);
     }
 
     if (step === 7) {
@@ -227,7 +239,7 @@ export const fineTuning: Lesson = {
       items.push({ k: 'h2', t: 'text', x: 40, y: 250, text: t({ en: 'a chat assistant (general outline)', zh: '聊天助理（大致流程）' }), size: 14, tone: 'muted' });
       row('c', 264, t({ en: 'pretrain', zh: '預訓練' }), t({ en: 'a huge amount of text', zh: '海量文字' }), t({ en: 'fine-tune', zh: '微調' }), t({ en: 'example conversations', zh: '對話範例' }), t({ en: 'assistant', zh: '助理' }), 'a');
       items.push({ k: 'cn', t: 'text', x: 450, y: 420, text: t({ en: 'expensive and general → cheap and specific', zh: '昂貴且通用 → 便宜且專門' }), size: 16, bold: true, anchor: 'middle' });
-      ends = pct(FT.full.endsA); loss = BEST.full.loss.toFixed(2); data = String(FT.trainNames); steps = String(BEST.full.step);
+      ends = pct(AT_BEST().endsA); loss = BEST.full.loss.toFixed(2); data = String(FT.trainNames); steps = String(BEST.full.step);
     }
 
     if (step === 8) {
@@ -235,21 +247,21 @@ export const fineTuning: Lesson = {
       bestMark('bm', BEST.full, 'a', 1.5, 3.5);
       bestMark('bs', BEST.scratch, 'b', 1.5, 3.5);
       endsBars(['base', 'full', 'scratch'], 620, 60, 250, 250);
-      sampleRow('s', SAMPLES.full, 410, t({ en: 'fine-tuned model writes:', zh: '微調後的模型寫出：' }));
-      ends = pct(FT.full.endsA); loss = BEST.full.loss.toFixed(2); data = String(FT.trainNames); steps = String(BEST.full.step);
+      sampleRow('s', AT_BEST().samples, 410, t({ en: `fine-tuned model, kept at step ${BEST.full.step}, writes:`, zh: `微調後的模型（留在第 ${BEST.full.step} 步）寫出：` }));
+      ends = pct(AT_BEST().endsA); loss = BEST.full.loss.toFixed(2); data = String(FT.trainNames); steps = String(BEST.full.step);
     }
 
     return {
       metrics: [
         { label: { en: 'Ends in “a”', zh: '以「a」結尾' }, value: ends },
-        { label: { en: 'Held-out loss', zh: '保留集損失' }, value: loss },
+        { label: { en: 'Held-out loss', zh: '驗證損失' }, value: loss },
         { label: { en: 'Training names', zh: '訓練名字數' }, value: data },
         { label: { en: 'Fine-tuning steps', zh: '微調步數' }, value: steps },
       ],
       items,
       legend: step === 3 || step === 4 || step === 8
         ? [{ tone: 'a', text: { en: 'pretrained + fine-tuned', zh: '預訓練 + 微調' } }, ...(step !== 3 ? [{ tone: 'b' as const, text: { en: 'from scratch on the 40 names', zh: '只用 40 個名字從頭訓練' } }] : [])]
-        : step === 5 ? [{ tone: 'a', text: { en: 'held-out loss (the gray line is the training loss)', zh: '保留集損失（灰線是訓練損失）' } }] : undefined,
+        : step === 5 ? [{ tone: 'a', text: { en: 'held-out loss (the gray line is the training loss)', zh: '驗證損失（灰線是訓練損失）' } }] : undefined,
     };
   },
 };

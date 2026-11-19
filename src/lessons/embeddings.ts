@@ -146,7 +146,7 @@ export const embeddings: Lesson = {
       title: { en: 'Nobody fills in the table', zh: '沒有人去填這張表' },
       body: [
         { en: 'Before training, every number in the table is random. The upper strip is row “e” of a fresh, untrained model; the lower strip is the same row after training.', zh: '訓練之前，表裡的每個數字都是隨機的。上面那條是一個全新、未訓練模型的「e」列，下面那條是訓練之後的同一列。' },
-        lz((d) => ({ en: `Training nudged every number, by ${d.change.toFixed(2)} on average. The table is part of the model’s weights, and it is learned the same way as all the others.`, zh: `訓練把每個數字都推動了一些，平均移動 ${d.change.toFixed(2)}。這張表是模型權重的一部分，學習的方式和其他權重完全一樣。` })),
+        lz((d) => ({ en: `Training nudged every number, by ${d.change.toFixed(2)} on average. The table is part of the model’s weights (the adjustable numbers inside the model), and it is learned the same way as all the others (the Training Loop lesson shows how).`, zh: `訓練把每個數字都推動了一些，平均移動 ${d.change.toFixed(2)}。這張表是模型權重（模型裡可以調整的數字）的一部分，學習的方式和其他權重完全一樣（「訓練迴圈」那一課會說明怎麼學）。` })),
       ],
       changed: [{ sign: '~', text: { en: 'Random row → trained row', zh: '隨機的列 → 訓練後的列' } }],
     },
@@ -154,8 +154,8 @@ export const embeddings: Lesson = {
       short: { en: 'Similarity', zh: '相似度' }, chapter: 'technique',
       title: { en: 'Do two tokens point the same way?', zh: '兩個詞元指向同一個方向嗎？' },
       body: [
-        { en: 'Think of each row as an arrow in 16 directions. <b>Cosine similarity</b> asks how much two arrows point the same way: +1 means the same direction, 0 unrelated, −1 opposite.', zh: '把每一列想成指向 16 個方向的箭頭。<b>餘弦相似度（cosine similarity）</b>問的是兩個箭頭有多同向：+1 代表方向相同，0 代表無關，−1 代表方向相反。' },
-        lz((d) => ({ en: `In the trained table, “a” and “o” score ${f2(d.pairs[0].v)}. “a” and “v” score ${f2(d.pairs[1].v)}: they point in nearly opposite directions.`, zh: `在訓練好的表裡，「a」和「o」的分數是 ${f2(d.pairs[0].v)}；「a」和「v」是 ${f2(d.pairs[1].v)}，幾乎指向相反的方向。` })),
+        { en: 'Think of each row as an arrow in a space with 16 directions (axes), just as (3, 4) is an arrow on a flat map with 2. <b>Cosine similarity</b> asks how much two arrows point the same way: +1 means the same direction, 0 unrelated (a right angle), −1 opposite.', zh: '把每一列想成在 16 個方向（座標軸）的空間裡的一支箭頭，就像 (3, 4) 是平面地圖（2 個方向）上的一支箭頭。<b>餘弦相似度（cosine similarity）</b>問的是兩支箭頭有多同向：+1 代表方向相同，0 代表無關（互相垂直），−1 代表方向相反。' },
+        lz((d) => ({ en: `In the trained table, “a” and “o” score ${f2(d.pairs[0].v)}. “a” and “v” score ${f2(d.pairs[1].v)}: they point more away from each other than toward each other.`, zh: `在訓練好的表裡，「a」和「o」的分數是 ${f2(d.pairs[0].v)}；「a」和「v」是 ${f2(d.pairs[1].v)}：它們與其說同向，不如說是背向彼此。` })),
       ],
       changed: [{ sign: '+', text: { en: 'A way to compare two embeddings', zh: '比較兩個嵌入的方法' } }],
     },
@@ -251,15 +251,27 @@ export const embeddings: Lesson = {
         items.push({ k: 'cv' + ch, t: 'vec', x: 190, y: 101 + i * 110, v: trained[id], cell: 24, max: maxAbs });
       });
       items.push({ k: 'br1', t: 'arrow', x1: 600, y1: 112, x2: 600, y2: 200, tone: 'a' });
-      items.push({ k: 'cs1', t: 'text', x: 650, y: 162, size: 20, bold: true, mono: true, tone: 'a', text: `a · o  ${f2(d.pairs[0].v)}` });
+      items.push({ k: 'cs1', t: 'text', x: 650, y: 162, size: 20, bold: true, mono: true, tone: 'a', text: `cos(a, o) = ${f2(d.pairs[0].v)}` });
       items.push({ k: 'br2', t: 'arrow', x1: 630, y1: 112, x2: 630, y2: 310, tone: 'bad', dashed: true });
-      items.push({ k: 'cs2', t: 'text', x: 650, y: 300, size: 20, bold: true, mono: true, tone: 'bad', text: `a · v  ${f2(d.pairs[1].v)}` });
-      items.push({ k: 'cn', t: 'text', x: 450, y: 450, anchor: 'middle', size: 14.5, tone: 'muted', text: t({ en: 'cosine similarity: +1 same direction · 0 unrelated · −1 opposite', zh: '餘弦相似度：+1 同方向 · 0 無關 · −1 相反' }) });
+      items.push({ k: 'cs2', t: 'text', x: 650, y: 300, size: 20, bold: true, mono: true, tone: 'bad', text: `cos(a, v) = ${f2(d.pairs[1].v)}` });
+      // illustration: what +1, 0 and −1 look like with only 2 directions
+      const ill = [{ a: 20, b: 20, v: '+1' }, { a: 20, b: 110, v: '0' }, { a: 20, b: 200, v: '−1' }];
+      ill.forEach((p, i) => {
+        const cx = 330 + i * 150, cy = 420;
+        const end = (deg: number): [number, number] => [cx + 46 * Math.cos((deg * Math.PI) / 180), cy - 46 * Math.sin((deg * Math.PI) / 180)];
+        items.push({ k: 'il' + i + 'a', t: 'path', x: 0, y: 0, pts: [[cx, cy], end(p.a)], tone: 'a', width: 3 });
+        items.push({ k: 'il' + i + 'b', t: 'path', x: 0, y: 0, pts: [[cx, cy], end(p.b)], tone: i === 2 ? 'bad' : 'b', width: 3, dashed: i > 0 });
+        items.push({ k: 'il' + i + 'o', t: 'dot', x: cx, y: cy, r: 3, tone: 'ink' });
+        items.push({ k: 'il' + i + 't', t: 'text', x: cx, y: cy + 36, text: p.v, size: 15, bold: true, mono: true, anchor: 'middle', tone: i === 2 ? 'bad' : i === 0 ? 'a' : 'ink' });
+      });
+      items.push({ k: 'ill', t: 'text', x: 220, y: 412, anchor: 'end', size: 13, tone: 'muted', text: t({ en: 'illustration with 2 directions:', zh: '示意（只有 2 個方向）：' }) });
+      items.push({ k: 'cn', t: 'text', x: 450, y: 505, anchor: 'middle', size: 14.5, tone: 'muted', text: t({ en: 'cosine similarity: +1 same direction · 0 unrelated · −1 opposite', zh: '餘弦相似度：+1 同方向 · 0 無關 · −1 相反' }) });
     }
 
     if (step === 5) {
       const ids = [...GRID].map((c) => CHARS.indexOf(c));
-      const m = ids.map((i) => ids.map((j) => cos(trained[i], trained[j])));
+      // round tiny values to 0 so no cell reads "-0.0"
+      const m = ids.map((i) => ids.map((j) => { const c = cos(trained[i], trained[j]); return Math.abs(c) < 0.05 ? 0 : c; }));
       items.push({ k: 'grid', t: 'heat', x: 250, y: 64, cell: 36, m, rows: [...GRID], cols: [...GRID], fmt: 'num', max: 1 });
       items.push({ k: 'gl1', t: 'text', x: 214, y: 160, anchor: 'end', size: 14, tone: 'a', text: t({ en: 'vowels', zh: '母音' }) });
       items.push({ k: 'gl2', t: 'text', x: 214, y: 360, anchor: 'end', size: 14, tone: 'muted', text: t({ en: 'consonants', zh: '子音' }) });

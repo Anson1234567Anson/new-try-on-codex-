@@ -2,7 +2,7 @@ import type { Lesson, Step } from './types';
 import type { Item, Tone } from '../engine/scene';
 import { t, type L } from '../i18n';
 import { GPT, type Weights } from '../model/gpt';
-import { CHARS, NAMES, encode } from '../model/data';
+import { CHARS, NAMES, TRAIN_NAMES, encode, example, rng } from '../model/data';
 import { softmaxRow } from '../model/tensor';
 import weights from '../model/weights.json';
 
@@ -63,6 +63,84 @@ const data = (): Data => cache ??= (() => {
 const sum = (ps: Part[]) => ps.reduce((s, p) => s + p.n, 0);
 const n0 = (v: number) => v.toLocaleString('en-US');
 const pct = (v: number) => Math.round(v * 100) + '%';
+// ---------- the "type your own start" step: the full forward pass on any prefix ----------
+let modelCache: GPT | undefined;
+const MODEL = () => modelCache ??= GPT.fromJSON(weights as Weights);
+interface Pass { letters: string[]; att: (number | null)[][]; active: number; order: { i: number; v: number }[]; rest: string[] }
+const passCache = new Map<string, Pass>();
+const clean = (raw: string) => raw.replace(/[^a-z]/g, '').slice(0, 7);
+function pass(prefix: string): Pass {
+  let r = passCache.get(prefix);
+  if (r) return r;
+  const m = MODEL(), ids = encode('.' + prefix), tr = m.forward(ids), last = ids.length - 1;
+  const att = ids.map((_, i) => tr.att[0].row(i).map((v, j) => (j > i ? null : v)));
+  const probs = softmaxRow(tr.logits.row(last));
+  // write the rest of the name three times, one letter (one forward pass) at a time
+  const rest = [5, 6, 7].map((seed) => {
+    const rand = rng(seed), out = [...ids];
+    while (out.length < m.cfg.ctx) {
+      const p = m.next(out);
+      let u = rand(), id = 0;
+      while (id < p.length - 1 && (u -= p[id]) > 0) id++;
+      if (id === 0) break;
+      out.push(id);
+    }
+    return out.slice(1).map((i) => CHARS[i]).join('');
+  });
+  r = { letters: ids.map((i) => CHARS[i]), att, active: tr.hidden.row(last).filter((v) => v > 0).length,
+    order: probs.map((v, i) => ({ v, i })).sort((a, b) => b.v - a.v).slice(0, 10), rest };
+  if (passCache.size > 300) passCache.clear();
+  passCache.set(prefix, r);
+  return r;
+}
+const tryTop = (raw: string) => { const o = pass(clean(raw)).order[0]; return `${CHARS[o.i]} · ${pct(o.v)}`; };
+function tryIt(items: Item[], raw: string): void {
+  const prefix = clean(raw), P = pass(prefix), n = P.letters.length;
+  P.letters.forEach((ch, i) => items.push({ k: 'yt' + i, t: 'token', x: 40 + i * 50, y: 96, text: ch, tone: ch === '.' ? 'b' : i === n - 1 ? 'a' : 'ink' }));
+  if (!prefix) items.push({ k: 'yh', t: 'text', x: 100, y: 124, size: 14, tone: 'muted', text: t({ en: 'empty: only the start mark, so it guesses a first letter', zh: '空白：只有起始符號，所以它猜的是第一個字母' }) });
+  items.push({ k: 'yah', t: 'text', x: 40, y: 172, size: 13.5, tone: 'muted', text: t({ en: 'attention (row = letter looking)', zh: '注意力（列 = 正在看的字母）' }) });
+  items.push({ k: 'yheat', t: 'heat', x: 70, y: 200, m: P.att, rows: P.letters, cols: P.letters, cell: 34, fmt: 'pct', hi: n - 1 });
+  const last = P.letters[n - 1] === '.' ? t({ en: 'the start mark', zh: '起始符號' }) : `“${P.letters[n - 1]}”`;
+  items.push({ k: 'yn', t: 'text', x: 360, y: 172, size: 15, bold: true, tone: 'a', text: t({ en: `${P.active} of 32 neurons on for ${last}`, zh: `${last}打開了 32 個神經元中的 ${P.active} 個` }) });
+  items.push({ k: 'ybars', t: 'bars', x: 360, y: 210, w: 510, h: 190, title: t({ en: 'the 10 likeliest next letters (“.” = end the name)', zh: '最可能的 10 個下一個字母（「.」= 名字結束）' }),
+    items: P.order.map((o, j) => ({ label: CHARS[o.i], v: o.v, hi: j === 0 })) });
+  items.push({ k: 'yrl', t: 'text', x: 360, y: 436, size: 13.5, tone: 'muted', text: t({ en: 'the model writes the rest (3 samples, fixed seeds):', zh: '模型把它寫完（3 次取樣，固定亂數種子）：' }) });
+  P.rest.forEach((w, i) => items.push({ k: 'yr' + i, t: 'box', x: 360 + i * 172, y: 448, w: 160, h: 40, label: w || '·', tone: 'a' }));
+}
+
+// ---------- ours vs GPT-3 ----------
+let tokCache: number | undefined;
+// replay the course model's batches (scripts/train.ts: 6,000 steps of 32 names, drawn with rng(2)) and count predicted tokens
+const courseTokens = () => tokCache ??= (() => {
+  const ex = TRAIN_NAMES.map(example), r = rng(2);
+  let n = 0;
+  for (let s = 0; s < 6000 * 32; s++) n += ex[Math.floor(r() * ex.length)].y.length;
+  return n;
+})();
+const sci = (v: number) => { const e = Math.floor(Math.log10(v)); return `${(v / 10 ** e).toFixed(2)} × 10^${e}`; };
+function compare(items: Item[], D: Data): void {
+  const tok = courseTokens();
+  const rows: [L, string, string][] = [
+    [{ en: 'vocabulary', zh: '詞彙表' }, t({ en: '27 tokens (letters)', zh: '27 個詞元（字母）' }), t({ en: '50,257 BPE tokens', zh: '50,257 個 BPE 詞元' })],
+    [{ en: 'vector width', zh: '向量寬度' }, '16', '12,288'],
+    [{ en: 'blocks', zh: '區塊數' }, '1', '96'],
+    [{ en: 'attention heads per block', zh: '每個區塊的注意力頭' }, '1', '96'],
+    [{ en: 'context length', zh: '上下文長度' }, t({ en: `${D.pos.length} tokens`, zh: `${D.pos.length} 個詞元` }), t({ en: '2,048 tokens', zh: '2,048 個詞元' })],
+    [{ en: 'weights', zh: '權重' }, n0(D.total), t({ en: '175 billion', zh: '1,750 億' })],
+    [{ en: 'training tokens', zh: '訓練詞元' }, n0(tok), t({ en: '300 billion', zh: '3,000 億' })],
+    [{ en: 'compute ≈ 6 × N × D', zh: '運算量 ≈ 6 × N × D' }, sci(6 * D.total * tok), '3.14 × 10^23'],
+  ];
+  items.push({ k: 'ch1', t: 'text', x: 560, y: 108, size: 14, bold: true, anchor: 'end', tone: 'a', text: t({ en: 'our tiny GPT', zh: '我們的迷你 GPT' }) });
+  items.push({ k: 'ch2', t: 'text', x: 840, y: 108, size: 14, bold: true, anchor: 'end', tone: 'b', text: 'GPT-3 (2020)' });
+  rows.forEach(([lab, a, b], i) => {
+    const y = 132 + i * 44, hi = i === 4;
+    items.push({ k: 'cr' + i, t: 'box', x: 40, y, w: 820, h: 38, tone: hi ? 'a' : 'ink', active: hi });
+    items.push({ k: 'cl' + i, t: 'text', x: 60, y: y + 25, size: 15, bold: hi, text: t(lab) });
+    items.push({ k: 'ca' + i, t: 'text', x: 560, y: y + 25, size: 15, mono: true, anchor: 'end', text: a });
+    items.push({ k: 'cb' + i, t: 'text', x: 840, y: y + 25, size: 15, mono: true, anchor: 'end', text: b });
+  });
+}
+
 const top = () => { const p = data().probs; const i = p.indexOf(Math.max(...p)); return { ch: CHARS[i], p: p[i] }; };
 
 type StageId = 'ids' | 'emb' | 'att' | 'mlp' | 'out';
@@ -76,7 +154,8 @@ const STAGES: { id: StageId; label: L; from: L }[] = [
 // which stages have been assembled at each step of the build-up
 const BUILT: StageId[][] = [[], ['ids', 'emb'], ['ids', 'emb', 'att', 'mlp'], ['ids', 'emb', 'att', 'mlp', 'out']];
 // which stage is lit during the forward pass (steps 4–7)
-const LIT: Record<number, StageId[]> = { 4: ['ids', 'emb'], 5: ['att'], 6: ['mlp'], 7: ['out'], 8: ['emb'] };
+const LIT: Record<number, StageId[]> = { 4: ['ids', 'emb'], 5: ['att'], 6: ['mlp'], 7: ['out'], 8: ['ids', 'emb', 'att', 'mlp', 'out'], 9: ['emb'] };
+const TRY = 8, COMPARE = 9, RECAP = 10;
 
 const counted = (step: number) => {
   const b = step >= 3 ? BUILT[3] : BUILT[step];
@@ -92,7 +171,7 @@ function buildSteps(): Step[] {
   return [
     {
       short: { en: 'The pieces', zh: '零件' }, chapter: 'problem',
-      title: { en: 'Five lessons, five loose pieces', zh: '五堂課，五個散落的零件' },
+      title: { en: 'Five pieces, one machine', zh: '五個零件，一台機器' },
       body: [
         { en: 'Across the course you met each part of a transformer on its own: tokens, embeddings, attention, the MLP, and turning logits into text.', zh: '在這門課裡，你已經一個一個認識了 Transformer 的零件：詞元、嵌入、注意力、MLP，以及把 logits 變回文字。' },
         { en: 'But a model is not five ideas. It is one machine that a name flows through. In this lesson we bolt the pieces together and count every weight.', zh: '但模型不是五個獨立的概念，而是一台讓名字流過去的機器。這一課我們把零件鎖在一起，並且數清楚每一個權重。' },
@@ -170,14 +249,23 @@ function buildSteps(): Step[] {
       changed: [{ sign: '+', text: { en: '27 probabilities for the next letter', zh: '下一個字母的 27 個機率' } }],
     },
     {
-      short: { en: 'Limit', zh: '上限' }, chapter: 'problem',
-      title: { en: 'Case: the model can only read 8 tokens', zh: '案例：模型最多只能讀 8 個詞元' },
+      short: { en: 'Your start', zh: '你的開頭' }, chapter: 'technique',
+      title: { en: 'Try it: feed it your own start', zh: '動手試試：餵它你自己的開頭' },
       body: [
-        { en: `The <code>pos</code> table has exactly ${D.pos.length} rows, one per position. The longest name in our list, “${D.longest}”, has ${D.maxLen} letters, so with the start mark it fills all ${D.pos.length}.`, zh: `<code>pos</code> 表剛好有 ${D.pos.length} 列，每個位置一列。清單中最長的名字「${D.longest}」有 ${D.maxLen} 個字母，加上起始符號，正好用滿 ${D.pos.length} 個位置。` },
-        { en: 'So the model simply cannot see a ninth token: there is no position vector for it. Our names fit, but this is a hard limit built into the shapes, called the <b>context length</b>.', zh: '所以模型根本看不到第 9 個詞元：沒有對應的位置向量。我們的名字剛好放得下，但這是寫死在形狀裡的硬性上限，叫做<b>上下文長度</b>。' },
+        { en: 'Try it: type the start of a name (a–z, up to 7 letters) and watch the whole forward pass rerun: the attention grid, how many of the 32 neurons switch on for the last letter, and the 10 likeliest next letters.', zh: '動手試試：輸入一個名字的開頭（a–z，最多 7 個字母），看整個前向計算重新跑一次：注意力格子、最後一個字母打開了 32 個神經元中的幾個，以及最可能的 10 個下一個字母。' },
+        { en: 'At the bottom the model writes the rest, one letter at a time, by repeating this pass and sampling (Sampling lesson). Leave the box empty and it guesses a first letter from the start mark alone.', zh: '最下面是模型把名字寫完的樣子：一次一個字母，重複這次前向計算再取樣（「取樣」那一課）。把輸入框清空，它就只靠起始符號猜第一個字母。' },
       ],
-      callout: { kind: 'note', text: { en: 'Real models have the same kind of limit, only far longer. Making it longer means a bigger position table and much more attention work.', zh: '真實的模型也有同樣的上限，只是長得多。要拉長它，就需要更大的位置表，以及多得多的注意力運算。' } },
-      changed: [{ sign: '+', text: { en: 'Context length: 8', zh: '上下文長度：8' } }],
+      callout: { kind: 'insight', text: { en: 'Same 3,115 numbers, any input. That is the point of a trained model: the weights stay fixed, and every new start flows through the same machine.', zh: '同樣的 3,115 個數字，任何輸入都能處理。這就是訓練好的模型：權重固定不變，每一個新的開頭都流過同一台機器。' } },
+    },
+    {
+      short: { en: 'Case: scale', zh: '案例：規模' }, chapter: 'problem',
+      title: { en: 'Case: 8 tokens, and how far from a big model', zh: '案例：8 個詞元，以及和大型模型的距離' },
+      body: [
+        { en: `The <code>pos</code> table has exactly ${D.pos.length} rows, so the model cannot see a ninth token: its <b>context length</b> is a hard limit built into the shapes. That is why the Data lesson kept only names of up to 7 letters (“${D.longest}” plus the start mark fills all ${D.pos.length}).`, zh: `<code>pos</code> 表剛好有 ${D.pos.length} 列，所以模型看不到第 9 個詞元：它的<b>上下文長度</b>是寫死在形狀裡的硬性上限。這就是為什麼「資料與分詞流程」那一課只保留最多 7 個字母的名字（「${D.longest}」加上起始符號，剛好用滿 ${D.pos.length} 個位置）。` },
+        { en: 'GPT-3 is built from the same parts, only far bigger: compare row by row. Models like it also use the Training at Scale tools: a BPE tokenizer, 16-bit arithmetic with an fp32 master copy, checkpoints, fine-tuning (often with LoRA), and some newer models use mixture-of-experts.', zh: 'GPT-3 用的是同樣的零件，只是大得多：一列一列比比看。這類模型也用上「大規模訓練」那幾課的工具：BPE 分詞器、搭配 fp32 主副本的 16 位元運算、檢查點、微調（常用 LoRA），有些較新的模型還用了混合專家。' },
+      ],
+      callout: { kind: 'note', text: { en: 'GPT-3 figures are from its paper, “Language Models are Few-Shot Learners” (Brown and colleagues, 2020). Our training tokens are counted from the course model’s real batches.', zh: 'GPT-3 的數字來自它的論文〈Language Models are Few-Shot Learners〉（Brown 等人，2020）。我們的訓練詞元數，是從課程模型實際用過的批次數出來的。' } },
+      changed: [{ sign: '+', text: { en: 'Context length: 8 · ours vs GPT-3', zh: '上下文長度：8 · 我們的模型 vs GPT-3' } }],
     },
     {
       short: { en: 'Recap', zh: '回顧' }, chapter: 'recap',
@@ -204,17 +292,17 @@ export const tinyGpt: Lesson = {
     { text: { en: 'Where every weight lives', zh: '每個權重分別在哪裡' }, step: 3 },
     { text: { en: 'What happens at each stage of a forward pass', zh: '前向計算每一站發生了什麼' }, step: 6 },
     { text: { en: 'How the last vector becomes a guess', zh: '最後一個向量如何變成一個猜測' }, step: 7 },
-    { text: { en: 'Why the model has a length limit', zh: '為什麼模型有長度上限' }, step: 8 },
+    { text: { en: 'Why the model has a length limit, and how far it is from a big model', zh: '為什麼模型有長度上限，以及它和大型模型差多遠' }, step: 9 },
   ],
   get steps() { return stepsCache ??= buildSteps(); },
 
-  scene(step) {
+  scene(step, input = {}) {
     const D = data();
     const items: Item[] = [];
 
     // ---------- the pipeline of five stages ----------
-    const assembled = step <= 3 || step === 9;
-    const built = step === 9 ? BUILT[3] : step <= 3 ? BUILT[step] : BUILT[3];
+    const assembled = step <= 3 || step === RECAP;
+    const built = step === RECAP ? BUILT[3] : step <= 3 ? BUILT[step] : BUILT[3];
     const W = 150, GAP = 25, X0 = 20;
     const bx = (i: number) => X0 + i * (W + GAP);
     const scatter = [[60, 120], [380, 70], [640, 160], [140, 330], [520, 330]];
@@ -244,13 +332,13 @@ export const tinyGpt: Lesson = {
     }
 
     // residual stream over the block
-    if ((step >= 2 && step <= 3) || step === 9) {
+    if ((step >= 2 && step <= 3) || step === RECAP) {
       items.push({ k: 'res', t: 'arrow', x1: bx(1) + W / 2, y1: 98, x2: bx(4) + W / 2, y2: 98, tone: 'a', dashed: true });
       items.push({ k: 'resl', t: 'text', x: bx(2) + W + GAP / 2, y: 88, anchor: 'middle', size: 13.5, tone: 'a', text: t({ en: 'residual stream: attention and MLP add onto it', zh: '殘差流：注意力與 MLP 都把結果加上去' }) });
     }
 
     // where the weights sit
-    if (step === 3 || step === 9) {
+    if (step === 3 || step === RECAP) {
       const groups: StageId[] = ['emb', 'att', 'mlp', 'out'];
       items.push({
         k: 'share', t: 'bars', x: 150, y: 345, w: 600, h: 150,
@@ -322,30 +410,25 @@ export const tinyGpt: Lesson = {
       items.push({ k: 'pna', t: 'arrow', x1: 755, y1: 290, x2: 726, y2: 318, tone: 'a' });
     }
 
-    if (step === 8) {
-      const name = '.' + D.longest;
-      [...name].forEach((ch, i) => {
-        const y = 86 + i * 52;
-        items.push({ k: 'ct' + i, t: 'token', x: 40, y, text: ch, tone: ch === '.' ? 'b' : 'ink' });
-        items.push({ k: 'cp' + i, t: 'vec', x: 110, y: y + 11, v: D.pos[i] });
-        items.push({ k: 'cl' + i, t: 'text', x: 300, y: y + 28, size: 13.5, tone: 'muted', text: t({ en: `pos row ${i}`, zh: `pos 第 ${i} 列` }) });
-      });
-      items.push({ k: 'cx', t: 'box', x: 470, y: 300, w: 380, h: 64, tone: 'bad', label: t({ en: 'a 9th token: no row 8 in pos', zh: '第 9 個詞元：pos 沒有第 8 列' }), sub: t({ en: 'the model has nowhere to put it', zh: '模型沒有地方放它' }) });
-      items.push({ k: 'cxa', t: 'arrow', x1: 390, y1: 470, x2: 470, y2: 345, tone: 'bad', dashed: true });
-      items.push({ k: 'ch', t: 'text', x: 470, y: 130, size: 15, bold: true, tone: 'a', text: t({ en: `longest name in the list: ${D.maxLen} letters`, zh: `清單中最長的名字：${D.maxLen} 個字母` }) });
-      items.push({ k: 'ch2', t: 'text', x: 470, y: 156, size: 13.5, tone: 'muted', text: t({ en: `“${D.longest}” plus the start mark = 8 tokens, exactly full`, zh: `「${D.longest}」加上起始符號 = 8 個詞元，剛好塞滿` }) });
+    if (step === COMPARE) {
+      compare(items, D);
+    }
+
+    if (step === TRY) {
+      tryIt(items, String(input.start ?? PREFIX));
     }
 
     const tp = top();
     return {
       metrics: [
-        { label: { en: 'Weights counted', zh: '已計算權重' }, value: n0(step === 9 || step > 3 ? D.total : counted(step)) },
+        { label: { en: 'Weights counted', zh: '已計算權重' }, value: n0(step > 3 ? D.total : counted(step)) },
         { label: { en: 'Vector width', zh: '向量寬度' }, value: '16' },
         { label: { en: 'Context', zh: '上下文' }, value: t({ en: '8 tokens', zh: '8 個詞元' }) },
-        { label: { en: 'Next letter', zh: '下一個字母' }, value: step >= 7 && step !== 8 ? `${tp.ch} · ${pct(tp.p)}` : '—' },
+        { label: { en: 'Next letter', zh: '下一個字母' }, value: step === TRY ? tryTop(String(input.start ?? PREFIX)) : step === 7 || step === RECAP ? `${tp.ch} · ${pct(tp.p)}` : '—' },
       ],
       items,
-      legend: step >= 4 && step <= 8
+      controls: step === TRY ? [{ key: 'start', kind: 'text', label: { en: 'Start of a name', zh: '名字的開頭' }, value: PREFIX, maxLength: 7, pattern: 'a-z', placeholder: { en: 'a–z, up to 7 letters', zh: 'a–z，最多 7 個字母' } }] : undefined,
+      legend: step >= 4 && step <= 7
         ? [{ tone: 'pos', text: { en: 'positive', zh: '正數' } }, { tone: 'neg', text: { en: 'negative', zh: '負數' } }]
         : undefined,
     };

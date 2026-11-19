@@ -1,4 +1,4 @@
-import type { Lesson } from './types';
+import type { Control, Lesson } from './types';
 import type { Item, Tone } from '../engine/scene';
 import { t, type L } from '../i18n';
 import { GPT, type Weights } from '../model/gpt';
@@ -83,7 +83,10 @@ const spec = () => {
   const e0vow = Object.entries(d.chTab).reduce((s, [c, r]) => s + (VOWELS.has(c) ? r[0] : 0), 0);
   return {
     start: at(0, 1), second: at(1, 1), third: at(2, 2), mid: [at(3, 3), at(4, 3), at(5, 3)],
-    e: ch('e', 0), y: ch('y', 0), e0vow: e0vow / e0all,
+    e: ch('e', 0), y: ch('y', 0), e0vow: e0vow / e0all, e0early: at(1, 0), e0late: at(6, 0),
+    // how well one clue alone predicts the chosen expert: always guess the usual expert for that position, or for that letter
+    byPos: d.posTab.reduce((a, r) => a + Math.max(...r), 0) / d.tokens,
+    byLetter: Object.values(d.chTab).reduce((a, r) => a + Math.max(...r), 0) / d.tokens,
   };
 };
 
@@ -92,6 +95,21 @@ const VAL = { dense: last(EX.dense.val), e4: last(EX.experts4.val), top2: last(E
 const DENSE_W = EX.dense.params;
 
 const EXPERT_X = (e: number) => 45 + e * 210;
+
+// the "route your own name" step
+const TRY = 7;
+const tryControls: Control[] = [{ key: 'name', kind: 'text', label: { en: 'Name', zh: '名字' }, value: 'james', maxLength: 7, pattern: 'a-z', placeholder: { en: 'a–z', zh: 'a–z' } }];
+const routeCache = new Map<string, { router: number[][]; chosen: number[] }>();
+const route = (name: string) => {
+  let r = routeCache.get(name);
+  if (!r) {
+    const tr = data().model.forward(encode('.' + name));
+    r = { router: tr.router!.d.length ? Array.from({ length: name.length + 1 }, (_, i) => tr.router!.row(i)) : [], chosen: tr.chosen!.map((c) => c[0]) };
+    if (routeCache.size > 200) routeCache.clear();
+    routeCache.set(name, r);
+  }
+  return r;
+};
 
 export const moe: Lesson = {
   id: 'moe',
@@ -103,18 +121,18 @@ export const moe: Lesson = {
   minutes: 11,
   level: 'intermediate',
   learn: [
-    { text: { en: 'Why a dense model makes every token pay for every weight', zh: '為什麼密集模型讓每個詞元都要用到每個權重' }, step: 0 },
+    { text: { en: 'Why a normal (dense) model makes every token pay for every weight', zh: '為什麼一般（密集）模型讓每個詞元都要用到每個權重' }, step: 0 },
     { text: { en: 'How a router picks an expert for each token', zh: '路由器如何替每個詞元挑選專家' }, step: 3 },
     { text: { en: 'Total weights versus weights used per token', zh: '總權重數和每個詞元實際用到的權重數' }, step: 5 },
     { text: { en: 'What the experts specialized in', zh: '各個專家分別專精什麼' }, step: 6 },
-    { text: { en: 'What MoE gains at our size, and why it grows with scale', zh: 'MoE 在我們的規模下有多少好處，以及為什麼規模越大越有用' }, step: 7 },
+    { text: { en: 'What MoE gains at our size, and why it grows with scale', zh: 'MoE 在我們的規模下有多少好處，以及為什麼規模越大越有用' }, step: 8 },
   ],
   steps: [
     {
       short: { en: 'The problem', zh: '問題' }, chapter: 'problem',
       title: { en: 'Every token pays for every weight', zh: '每個詞元都要用上每個權重' },
       body: [
-        { en: 'More weights can hold more knowledge. But in the model so far, every token goes through the <i>whole</i> MLP and uses all 1,072 of its weights, whatever the letter.', zh: '權重越多，能記住的知識就越多。但在目前的模型裡，每個詞元都要通過<i>整個</i> MLP：不管是哪個字母，都要用上它全部 1,072 個權重。' },
+        { en: 'More weights can hold more knowledge. But in the model so far, a normal (<b>dense</b>) model, every token goes through the <i>whole</i> MLP and uses all 1,072 of its weights, whatever the letter.', zh: '權重越多，能記住的知識就越多。但在目前的模型（一般的<b>密集</b>模型）裡，每個詞元都要通過<i>整個</i> MLP：不管是哪個字母，都要用上它全部 1,072 個權重。' },
         lz(() => ({ en: `Make the MLP 4× bigger (${fmt(4 * data().w.expert)} weights) and every token does 4× the MLP work. Most of that work is probably wasted: a start token and a final “e” need different knowledge.`, zh: `把 MLP 放大 4 倍（${fmt(4 * data().w.expert)} 個權重），每個詞元的 MLP 工作量也跟著變成 4 倍。其中大部分可能是白做的：名字開頭的詞元和結尾的「e」需要的知識並不一樣。` })),
       ],
       callout: { kind: 'insight', text: { en: 'Idea: store many weights, but let each token use only the part it needs.', zh: '想法：存很多權重，但每個詞元只用它需要的那一部分。' } },
@@ -133,7 +151,7 @@ export const moe: Lesson = {
       title: { en: 'The router scores every expert', zh: '路由器替每個專家打分數' },
       body: [
         { en: 'The router multiplies a token’s 16 numbers by its 16 × 4 matrix: one score per expert. Softmax turns the 4 scores into probabilities that add up to 100%.', zh: '路由器把詞元的 16 個數字乘上它的 16 × 4 矩陣，每個專家得到一個分數。softmax 再把這 4 個分數變成加起來是 100% 的機率。' },
-        { en: 'These are the real probabilities from our trained 4-expert model for every token of <code>.baylee</code>. Like everything else, the router learned them during training.', zh: '這些是我們訓練好的 4 專家模型，對 <code>.baylee</code> 每個詞元給出的真實機率。路由器和其他部分一樣，是在訓練中學會這樣打分數的。' },
+        { en: 'These are the real probabilities for every token of <code>.baylee</code> from our trained 4-expert model (the 4-expert comparison run below, saved after its 1,500 steps). Like everything else, the router learned them during training.', zh: '這些是我們訓練好的 4 專家模型（就是後面比較實驗裡的 4 專家模型，訓練 1,500 步後存下來的），對 <code>.baylee</code> 每個詞元給出的真實機率。路由器和其他部分一樣，是在訓練中學會這樣打分數的。' },
       ],
       changed: [{ sign: '+', text: { en: 'router probabilities (7 × 4)', zh: '路由器機率（7 × 4）' } }],
     },
@@ -142,7 +160,7 @@ export const moe: Lesson = {
       title: { en: 'Each token goes to its top expert', zh: '每個詞元送去分數最高的專家' },
       body: [
         { en: 'Each token is sent to the expert with the highest probability. Choosing the best <i>k</i> experts is called <b>top-k routing</b>; our model uses <b>top-1</b>.', zh: '每個詞元都送去機率最高的那個專家。挑出最好的 <i>k</i> 個專家叫做 <b>top-k 路由</b>；我們的模型用的是 <b>top-1</b>。' },
-        lz(() => { const d = data(); const p = d.router[F][d.chosen[F]]; return { en: `Follow the “y”: the router gives E${d.chosen[F]} ${pct(p)}, so “y” goes to E${d.chosen[F]}. The router is often unsure: for ${pct(d.unsure)} of all held-out tokens, the winning expert gets under 50%.`, zh: `跟著「y」看：路由器給 E${d.chosen[F]} ${pct(p)}，所以「y」被送到 E${d.chosen[F]}。路由器常常不太篤定：在所有保留資料的詞元中，有 ${pct(d.unsure)} 的勝出專家機率不到 50%。` }; }),
+        lz(() => { const d = data(); const p = d.router[F][d.chosen[F]]; return { en: `Follow the “y”: the router gives E${d.chosen[F]} ${pct(p)}, so “y” goes to E${d.chosen[F]}. The router is often unsure: over the ${VAL_NAMES.length} held-out names (names the model never trained on), ${pct(d.unsure)} of tokens get a winning expert under 50%.`, zh: `跟著「y」看：路由器給 E${d.chosen[F]} ${pct(p)}，所以「y」被送到 E${d.chosen[F]}。路由器常常不太篤定：在驗證集的 ${VAL_NAMES.length} 個名字（模型訓練時從沒看過）裡，有 ${pct(d.unsure)} 的詞元，勝出專家的機率不到 50%。` }; }),
       ],
       changed: [{ sign: '+', text: { en: 'chosen expert per token', zh: '每個詞元選中的專家' } }],
     },
@@ -151,7 +169,7 @@ export const moe: Lesson = {
       title: { en: 'Scale the expert’s output', zh: '把專家的輸出乘上機率' },
       body: [
         lz(() => { const d = data(); const e = d.chosen[F]; return { en: `Expert E${e} turns the “y” vector into 16 numbers, and they are multiplied by its router probability, ${d.router[F][e].toFixed(2)}. That is the layer’s output, added onto the vector as before.`, zh: `專家 E${e} 把「y」的向量變成 16 個數字，再乘上它的路由器機率 ${d.router[F][e].toFixed(2)}。這就是這一層的輸出，和以前一樣加回向量上。` }; }),
-        { en: 'Multiplying by the probability matters for training: it is how the router gets a gradient and learns which expert helps which token.', zh: '乘上機率這一步對訓練很重要：路由器就是透過它拿到梯度，學會哪個專家對哪個詞元有幫助。' },
+        { en: 'Multiplying by the probability matters for training: it lets training tell whether giving this expert more or less weight would have helped, so the router can learn which expert helps which token (the Gradients lesson explains how).', zh: '乘上機率這一步對訓練很重要：它讓訓練能判斷「多給或少給這個專家一點比重，會不會更好」，路由器才學得會哪個專家對哪個詞元有幫助（「梯度與反向傳播」那一課會說明怎麼做到）。' },
       ],
       callout: { kind: 'note', text: { en: 'For clarity our code runs all 4 experts on every token and multiplies the unchosen outputs by 0 (dimmed). Real systems run only the chosen expert; the result is the same.', zh: '為了好懂，我們的程式讓每個詞元都跑過 4 個專家，再把沒被選中的輸出乘上 0（變暗的部分）。真實系統只會跑被選中的專家，結果完全一樣。' } },
       changed: [{ sign: '+', text: { en: 'gated output for “y”', zh: '「y」乘上機率後的輸出' } }],
@@ -170,20 +188,30 @@ export const moe: Lesson = {
       short: { en: 'Specialists', zh: '專長' }, chapter: 'solution',
       title: { en: 'What did the experts specialize in?', zh: '專家們各自專精什麼？' },
       body: [
-        lz(() => { const s = spec(); return { en: `Nobody assigned roles. Over all 615 held-out names, the split is mostly by <b>position</b>: E1 takes ${pct(s.start)} of start tokens and ${pct(s.second)} of 2nd letters, E2 takes ${pct(s.third)} of 3rd letters, E3 ${pct(Math.min(...s.mid))}–${pct(Math.max(...s.mid))} of letters 4–6.`, zh: `沒有人分配角色。統計全部 615 個保留名字，分工主要看<b>位置</b>：E1 接下 ${pct(s.start)} 的開頭詞元和 ${pct(s.second)} 的第 2 個字母，E2 接下 ${pct(s.third)} 的第 3 個字母，E3 則接下第 4～6 個字母的 ${pct(Math.min(...s.mid))}～${pct(Math.max(...s.mid))}。` }; }),
-        lz(() => { const s = spec(); return { en: `E0 is about letters: it takes ${pct(s.e)} of all “e” and ${pct(s.y)} of all “y”, and ${pct(s.e0vow)} of its tokens are vowels (counting y), mostly later in the name.`, zh: `E0 則跟字母有關：所有「e」有 ${pct(s.e)}、所有「y」有 ${pct(s.y)} 被送到它這裡，而它收到的詞元有 ${pct(s.e0vow)} 是母音（y 也算），多半在名字後段。` }; }),
+        lz(() => { const s = spec(); return { en: `Nobody assigned roles. Over all ${VAL_NAMES.length} held-out names, <b>position</b> is a strong clue: E1 takes ${pct(s.start)} of the start “.” and ${pct(s.second)} of 2nd letters, E2 takes ${pct(s.third)} of 3rd letters, E3 ${pct(Math.min(...s.mid))}–${pct(Math.max(...s.mid))} of letters 4–6.`, zh: `沒有人分配角色。統計驗證集全部 ${VAL_NAMES.length} 個名字，<b>位置</b>是很強的線索：E1 接下 ${pct(s.start)} 的開頭「.」和 ${pct(s.second)} 的第 2 個字母，E2 接下 ${pct(s.third)} 的第 3 個字母，E3 則接下第 4～6 個字母的 ${pct(Math.min(...s.mid))}～${pct(Math.max(...s.mid))}。` }; }),
+        lz(() => { const s = spec(); return { en: `E0 mixes both: it takes more of the later positions (${pct(s.e0early)} of 2nd letters, ${pct(s.e0late)} of 7th) and especially vowels there: ${pct(s.e)} of all “e” and ${pct(s.y)} of all “y”. ${pct(s.e0vow)} of its tokens are vowels (counting y).`, zh: `E0 兩者都有：位置越後面，它接下的越多（第 2 個字母的 ${pct(s.e0early)}，第 7 個的 ${pct(s.e0late)}），而且特別是那裡的母音：所有「e」有 ${pct(s.e)}、所有「y」有 ${pct(s.y)} 被送到它這裡。它收到的詞元有 ${pct(s.e0vow)} 是母音（y 也算）。` }; }),
       ],
-      callout: { kind: 'note', text: { en: 'Experts are rarely neat “topic experts”. In our model the router mostly uses position, which is easy to read from the vector.', zh: '專家很少是整整齊齊的「主題專家」。在我們的模型裡，路由器主要看位置，因為位置很容易從向量裡讀出來。' } },
+      callout: { kind: 'note', text: lz(() => { const s = spec(); return { en: `Neither clue explains everything. Guessing each token’s expert from its position alone is right for ${pct(s.byPos)} of held-out tokens; guessing from its letter alone, ${pct(s.byLetter)}. The router uses both, and experts are rarely neat “topic experts”.`, zh: `兩種線索都解釋不了全部。只看位置來猜每個詞元的專家，在驗證集的詞元上猜對 ${pct(s.byPos)}；只看字母來猜，猜對 ${pct(s.byLetter)}。路由器兩者都用，專家也很少是整整齊齊的「主題專家」。` }; }) },
       changed: [{ sign: '+', text: { en: 'routing counted over 615 names', zh: '統計 615 個名字的路由結果' } }],
+    },
+    {
+      short: { en: 'Try it', zh: '動手試試' }, chapter: 'solution',
+      title: { en: 'Route your own name', zh: '替你自己的名字分派專家' },
+      body: [
+        { en: 'Try it: type a name (up to 7 letters) and watch the router’s real probabilities for every token, and the expert each one goes to.', zh: '動手試試：輸入一個名字（最多 7 個字母），看看路由器對每個詞元給出的真實機率，以及每個詞元被送去哪個專家。' },
+        lz(() => ({ en: `The right column shows the expert most tokens at that position go to, over all held-out names. On average ${pct(spec().byPos)} of tokens follow it, about two in three. Notice where your name breaks from it, often a vowel late in the name pulled to E0.`, zh: `最右邊那一欄，是驗證集所有名字在那個位置上最常被送去的專家。平均有 ${pct(spec().byPos)} 的詞元跟它一樣，大約三個裡有兩個。看看你的名字在哪裡不一樣，常常是名字後段的母音被拉去 E0。` })),
+      ],
+      changed: [{ sign: '+', text: { en: 'any name, routed live', zh: '任何名字，即時分派' } }],
     },
     {
       short: { en: 'Result', zh: '結果' }, chapter: 'problem',
       title: { en: 'Case: is it better?', zh: '案例：真的比較好嗎？' },
       body: [
-        { en: `We trained both models the same way for 1,500 steps. Held-out loss: normal model <b>${VAL.dense.toFixed(3)}</b>, 4 experts <b>${VAL.e4.toFixed(3)}</b>. A small gain, from one training run each, so it could partly be luck.`, zh: `兩個模型用同樣的方式各訓練 1,500 步。保留資料損失：一般模型 <b>${VAL.dense.toFixed(3)}</b>，4 個專家 <b>${VAL.e4.toFixed(3)}</b>。進步很小，而且各只訓練一次，有一部分可能只是運氣。` },
+        { en: `In this set of comparison runs, both models were trained the same way for 1,500 steps. <b>Held-out loss</b> (the average surprise at the real next letter on the ${VAL_NAMES.length} held-out names; lower is better): normal model <b>${VAL.dense.toFixed(3)}</b>, 4 experts <b>${VAL.e4.toFixed(3)}</b>. A small gain, from one training run each, so it could partly be luck.`, zh: `在這組比較實驗裡，兩個模型用同樣的方式各訓練 1,500 步。<b>驗證損失</b>（在驗證集 ${VAL_NAMES.length} 個名字上，對真正下一個字母的平均「意外」程度，越低越好）：一般模型 <b>${VAL.dense.toFixed(3)}</b>，4 個專家 <b>${VAL.e4.toFixed(3)}</b>。進步很小，而且各只訓練一次，有一部分可能只是運氣。` },
         { en: 'That is honest for our size: names are a tiny task, and one 1,072-weight MLP already holds most of what there is to learn. MoE pays off when there is far more knowledge than one MLP can hold, as in large language models.', zh: '以我們的規模來說這很正常：名字是很小的任務，一個 1,072 個權重的 MLP 就已經裝得下大部分能學的東西。當要學的知識遠遠超過一個 MLP 能裝的量（例如大型語言模型），MoE 才真正划算。' },
       ],
-      changed: [{ sign: '+', text: { en: 'held-out loss, dense vs MoE', zh: '保留資料損失：密集 vs MoE' } }],
+      callout: { kind: 'note', text: { en: `These runs use their own recipe (warmup, then a cosine-shaped decay from a peak learning rate of 0.01), so the normal model scores ${VAL.dense.toFixed(3)} here, not the ${last(experiments.variants.base.val).toFixed(3)} of the constant-rate runs in the Multi-Head lesson. Compare only within one set of runs: that recipe change alone moved the normal model by more than MoE did.`, zh: `這組實驗有自己的訓練方式（先暖身，再從最高學習率 0.01 依餘弦曲線遞減），所以一般模型在這裡是 ${VAL.dense.toFixed(3)}，而不是「多頭注意力」那一課固定學習率實驗的 ${last(experiments.variants.base.val).toFixed(3)}。只能在同一組實驗裡互相比較：光是換訓練方式，一般模型的變化就比 MoE 帶來的還大。` } },
+      changed: [{ sign: '+', text: { en: 'held-out loss, dense vs MoE', zh: '驗證損失：密集 vs MoE' } }],
     },
     {
       short: { en: 'Variants', zh: '變化' }, chapter: 'problem',
@@ -200,13 +228,13 @@ export const moe: Lesson = {
       title: { en: 'Mixture of experts in one line', zh: '一句話說完混合專家模型' },
       body: [
         { en: 'Replace the MLP with several experts. A router gives each token a probability per expert; the token goes to its top-k experts, and their outputs are added, each multiplied by its probability.', zh: '把 MLP 換成好幾個專家。路由器替每個詞元算出每個專家的機率；詞元送去前 k 名的專家，再把它們的輸出各乘上機率後相加。' },
-        lz(() => ({ en: `Our model stores ${fmt(data().w.total)} weights but uses ${fmt(data().w.active)} per token. The experts learned to split the work mostly by position.`, zh: `我們的模型存了 ${fmt(data().w.total)} 個權重，每個詞元卻只用 ${fmt(data().w.active)} 個。專家們學會的分工主要是看位置。` })),
+        lz(() => ({ en: `Our model stores ${fmt(data().w.total)} weights but uses ${fmt(data().w.active)} per token. The experts learned to split the work by position and by letter: position alone predicts the expert for ${pct(spec().byPos)} of tokens.`, zh: `我們的模型存了 ${fmt(data().w.total)} 個權重，每個詞元卻只用 ${fmt(data().w.active)} 個。專家們學會的分工同時看位置和字母：光看位置，就能猜對 ${pct(spec().byPos)} 的詞元該去哪個專家。` })),
       ],
       callout: { kind: 'next', text: { en: 'Next: The Residual Stream. Why the attention and MLP (or expert) outputs are <i>added</i> onto each token’s vector.', zh: '下一課：殘差流。為什麼注意力和 MLP（或專家）的輸出，都是「加」到每個詞元的向量上。' } },
     },
   ],
 
-  scene(step) {
+  scene(step, input) {
     const d = data();
     const items: Item[] = [];
     const eTone = (e: number, on: boolean): Tone => (on ? 'a' : 'ink');
@@ -313,14 +341,39 @@ export const moe: Lesson = {
         { label: '“e”', v: s.e, hi: true },
         { label: '“y”', v: s.y, hi: true },
       ] });
-      items.push({ k: 'sn1', t: 'text', x: 710, y: 380, text: t({ en: `${fmt(VAL_NAMES.length)} held-out names, ${fmt(d.tokens)} tokens`, zh: `${fmt(VAL_NAMES.length)} 個保留名字，共 ${fmt(d.tokens)} 個詞元` }), size: 13, anchor: 'middle', tone: 'muted' });
+      items.push({ k: 'sn1', t: 'text', x: 710, y: 380, text: t({ en: `${fmt(VAL_NAMES.length)} held-out names, ${fmt(d.tokens)} tokens`, zh: `${fmt(VAL_NAMES.length)} 個驗證集名字，共 ${fmt(d.tokens)} 個詞元` }), size: 13, anchor: 'middle', tone: 'muted' });
       items.push({ k: 'sn2', t: 'text', x: 710, y: 404, text: t({ en: 'each row of the grid adds up to 100%', zh: '左表每一列加起來是 100%' }), size: 13, anchor: 'middle', tone: 'muted' });
     }
 
-    if (step === 7) {
+    let controls: Control[] | undefined;
+    let tryName = '';
+    if (step === TRY) {
+      controls = tryControls;
+      const name = String(input?.name ?? 'james').toLowerCase().replace(/[^a-z]/g, '').slice(0, 7);
+      tryName = name;
+      const chars = ['.', ...name];
+      const cell = 46, hx = 330, hy = 90;
+      items.push({ k: 'router', t: 'box', x: hx - 4, y: 14, w: E * cell + 4, h: 46, label: t({ en: 'router', zh: '路由器' }), sub: t({ en: 'real probabilities', zh: '真實機率' }), tone: 'b' });
+      const r = route(name);
+      const usual = d.posTab.map((row) => row.indexOf(Math.max(...row)));
+      chars.forEach((ch, i) => items.push({ k: 'tok' + i, t: 'token', text: ch, x: 250, y: hy + i * cell + 1, tone: ch === '.' ? 'b' : 'ink' }));
+      items.push({ k: 'heat', t: 'heat', x: hx, y: hy, cell, fmt: 'pct', max: 1, m: r.router, rows: chars.map(() => ''), cols: ['E0', 'E1', 'E2', 'E3'] });
+      items.push({ k: 'chh', t: 'text', x: 560, y: hy - 10, text: t({ en: 'goes to', zh: '送往' }), size: 13, tone: 'muted' });
+      items.push({ k: 'usu', t: 'text', x: 740, y: hy - 10, text: t({ en: 'usual at this position', zh: '這個位置通常送往' }), size: 13, tone: 'muted' });
+      chars.forEach((_, i) => {
+        const e = r.chosen[i], same = e === usual[i];
+        items.push({ k: 'ch' + i, t: 'text', x: 560, y: hy + i * cell + 28, text: `E${e}  (${pct(r.router[i][e])})`, size: 16, mono: true, bold: !same, tone: same ? 'ink' : 'a' });
+        items.push({ k: 'us' + i, t: 'text', x: 740, y: hy + i * cell + 28, text: `E${usual[i]}`, size: 16, mono: true, tone: 'muted' });
+      });
+      if (!name) items.push({ k: 'hint', t: 'text', x: 450, y: 300, anchor: 'middle', size: 16, tone: 'muted', text: t({ en: 'type a name (letters a–z) in the box above', zh: '請在上方的方框輸入一個名字（字母 a–z）' }) });
+      const off = chars.filter((_, i) => r.chosen[i] !== usual[i]).length;
+      items.push({ k: 'tsum', t: 'text', x: 450, y: 505, anchor: 'middle', size: 14, tone: 'muted', text: t({ en: `${chars.length - off} of ${chars.length} tokens go to the usual expert for their position (teal: the others)`, zh: `${chars.length} 個詞元中有 ${chars.length - off} 個送往該位置通常的專家（青綠色是例外）` }) });
+    }
+
+    if (step === 8) {
       items.push({ k: 'chart', t: 'chart', x: 80, y: 60, w: 500, h: 360, ymin: 2.15, ymax: 2.6, xmax: EX.steps, every: EX.dense.every,
         series: [{ pts: EX.dense.val, tone: 'muted' }, { pts: EX.experts4.val, tone: 'a' }],
-        xlabel: t({ en: 'training step', zh: '訓練步數' }), ylabel: t({ en: 'held-out loss (lower is better)', zh: '保留資料損失（越低越好）' }) });
+        xlabel: t({ en: 'training step', zh: '訓練步數' }), ylabel: t({ en: 'held-out loss (lower is better)', zh: '驗證損失（越低越好）' }) });
       items.push({ k: 'vd', t: 'text', x: 740, y: 150, text: VAL.dense.toFixed(3), size: 32, bold: true, mono: true, anchor: 'middle', tone: 'muted' });
       items.push({ k: 'vdl', t: 'text', x: 740, y: 178, text: t({ en: `normal MLP · ${fmt(DENSE_W)} weights`, zh: `一般 MLP · ${fmt(DENSE_W)} 個權重` }), size: 13, anchor: 'middle', tone: 'muted' });
       items.push({ k: 've', t: 'text', x: 740, y: 260, text: VAL.e4.toFixed(3), size: 32, bold: true, mono: true, anchor: 'middle', tone: 'a' });
@@ -329,7 +382,7 @@ export const moe: Lesson = {
       items.push({ k: 'vnote', t: 'text', x: 740, y: 376, text: t({ en: 'small: a tiny task for a tiny model', zh: '很小：小模型做小任務' }), size: 13, anchor: 'middle', tone: 'muted' });
     }
 
-    if (step === 8) {
+    if (step === 9) {
       const w = d.w, r8 = 16 * 8;
       const runs = [
         { name: t({ en: 'normal MLP', zh: '一般 MLP' }), total: DENSE_W, used: DENSE_W, val: VAL.dense },
@@ -338,7 +391,7 @@ export const moe: Lesson = {
         { name: t({ en: '8 experts, top-1', zh: '8 個專家，top-1' }), total: EX.experts8.params, used: w.shared + r8 + w.expert, val: VAL.e8 },
       ];
       const cx = [60, 400, 570, 760];
-      [t({ en: 'model', zh: '模型' }), t({ en: 'stored', zh: '儲存' }), t({ en: 'used per token', zh: '每個詞元用到' }), t({ en: 'held-out loss', zh: '保留資料損失' })]
+      [t({ en: 'model', zh: '模型' }), t({ en: 'stored', zh: '儲存' }), t({ en: 'used per token', zh: '每個詞元用到' }), t({ en: 'held-out loss', zh: '驗證損失' })]
         .forEach((h, j) => items.push({ k: 'th' + j, t: 'text', x: cx[j], y: 50, text: h, size: 14, tone: 'muted', anchor: j ? 'middle' : 'start' }));
       runs.forEach((r, i) => {
         const y = 92 + i * 52, hi = i >= 2;
@@ -352,7 +405,7 @@ export const moe: Lesson = {
       items.push({ k: 'mix', t: 'box', x: 120, y: 360, w: 660, h: 84, tone: 'b', label: t({ en: 'Mixtral 8x7B: 8 experts per layer, top-2', zh: 'Mixtral 8x7B：每層 8 個專家，top-2' }), sub: t({ en: '≈ 47 billion parameters stored, ≈ 13 billion used per token', zh: '儲存約 470 億個參數，每個詞元約用 130 億個' }) });
     }
 
-    if (step === 9) {
+    if (step === 10) {
       const boxes = [
         { en: 'token vector', zh: '詞元向量' }, { en: 'router → probabilities', zh: '路由器 → 機率' }, { en: 'top-k experts', zh: '前 k 名專家' },
         { en: '× probability, add', zh: '× 機率，相加' }, { en: 'add onto vector', zh: '加回向量' },
@@ -363,20 +416,23 @@ export const moe: Lesson = {
         if (i < 4) items.push({ k: 'rba' + i, t: 'arrow', x1: bx + 152, y1: 220, x2: bx + 170, y2: 220 });
       });
       items.push({ k: 'rt', t: 'text', x: 450, y: 310, text: t({ en: `stores ${fmt(d.w.total)} weights · uses ${fmt(d.w.active)} per token`, zh: `存 ${fmt(d.w.total)} 個權重 · 每個詞元用 ${fmt(d.w.active)} 個` }), size: 15, anchor: 'middle', tone: 'muted' });
-      items.push({ k: 'rt2', t: 'text', x: 450, y: 340, text: t({ en: `held-out loss ${VAL.e4.toFixed(3)} vs ${VAL.dense.toFixed(3)} (normal MLP)`, zh: `保留資料損失 ${VAL.e4.toFixed(3)} vs ${VAL.dense.toFixed(3)}（一般 MLP）` }), size: 15, anchor: 'middle', tone: 'muted' });
+      items.push({ k: 'rt2', t: 'text', x: 450, y: 340, text: t({ en: `held-out loss ${VAL.e4.toFixed(3)} vs ${VAL.dense.toFixed(3)} (normal MLP)`, zh: `驗證損失 ${VAL.e4.toFixed(3)} vs ${VAL.dense.toFixed(3)}（一般 MLP）` }), size: 15, anchor: 'middle', tone: 'muted' });
     }
 
     const moeOn = step >= 1;
     return {
       metrics: [
-        { label: { en: 'MLPs per block', zh: '每區塊的 MLP' }, value: step === 8 ? '1 / 4 / 8' : moeOn ? t({ en: '4 experts', zh: '4 個專家' }) : '1' },
+        ...(step === TRY ? [{ label: { en: 'Name', zh: '名字' }, value: '.' + tryName }] : []),
+        { label: { en: 'MLPs per block', zh: '每區塊的 MLP' }, value: step === 9 ? '1 / 4 / 8' : moeOn ? t({ en: '4 experts', zh: '4 個專家' }) : '1' },
         { label: { en: 'Weights stored', zh: '儲存的權重' }, value: fmt(moeOn ? d.w.total : DENSE_W) },
         { label: { en: 'Used per token', zh: '每個詞元用到' }, value: fmt(moeOn ? d.w.active : DENSE_W) },
-        { label: { en: '“y” goes to', zh: '「y」送往' }, value: step >= 3 ? `E${d.chosen[F]} (${pct(d.router[F][d.chosen[F]])})` : '—' },
-        { label: { en: 'Held-out loss', zh: '保留資料損失' }, value: step >= 7 ? `${VAL.e4.toFixed(3)} vs ${VAL.dense.toFixed(3)}` : '—' },
+        ...(step === TRY ? [] : [{ label: { en: '“y” goes to', zh: '「y」送往' }, value: step >= 3 ? `E${d.chosen[F]} (${pct(d.router[F][d.chosen[F]])})` : '—' },
+        { label: { en: 'Held-out loss', zh: '驗證損失' }, value: step >= 8 ? `${VAL.e4.toFixed(3)} vs ${VAL.dense.toFixed(3)}` : '—' }]),
       ],
       items,
-      legend: step === 4 ? [{ tone: 'pos', text: { en: 'positive number', zh: '正數' } }, { tone: 'neg', text: { en: 'negative number', zh: '負數' } }, { tone: 'a', text: { en: 'chosen expert', zh: '被選中的專家' } }]
+      controls,
+      legend: step === TRY ? [{ tone: 'heat', text: { en: 'router probability', zh: '路由器機率' } }, { tone: 'a', text: { en: 'not the usual expert for its position', zh: '不是該位置通常的專家' } }]
+        : step === 4 ? [{ tone: 'pos', text: { en: 'positive number', zh: '正數' } }, { tone: 'neg', text: { en: 'negative number', zh: '負數' } }, { tone: 'a', text: { en: 'chosen expert', zh: '被選中的專家' } }]
         : step >= 2 && step <= 6 ? [{ tone: 'heat', text: { en: 'share / probability', zh: '比例／機率' } }, { tone: 'a', text: { en: 'the token we follow / used', zh: '追蹤的詞元／用到的部分' } }] : undefined,
     };
   },

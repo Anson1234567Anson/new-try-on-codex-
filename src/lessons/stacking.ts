@@ -77,7 +77,7 @@ export const stacking: Lesson = {
       title: { en: 'One round of thinking', zh: '只想一輪' },
       body: [
         { en: 'Our model reads <code>.jimm</code>, turns each letter into a vector, passes the vectors once through attention and the MLP, and predicts. That middle part is one <b>block</b>.', zh: '我們的模型讀進 <code>.jimm</code>，把每個字母變成向量，讓這些向量通過一次注意力和 MLP，然後做預測。中間這一段就叫做一個<b>區塊（block）</b>。' },
-        { en: 'One block means one round: each token gathers context once and processes it once. Harder patterns may need a token to use what <i>another</i> token already gathered. How do we get more rounds?', zh: '一個區塊代表只有一輪：每個詞元收集一次上下文、加工一次。比較難的模式可能需要一個詞元去利用<i>另一個</i>詞元已經收集好的資訊。要怎麼多想幾輪？' },
+        { en: 'One block means one round: each token gathers context once and processes it once. Harder patterns may need a token to use what <i>another</i> token already gathered. For example (an illustration): in block 1 the second “m” could learn “the letter before me is also m”; only a second block lets a later token read that finding and use it, say “after a double letter, a vowel is likely”. How do we get more rounds?', zh: '一個區塊代表只有一輪：每個詞元收集一次上下文、加工一次。比較難的模式可能需要一個詞元去利用<i>另一個</i>詞元已經收集好的資訊。舉例來說（示意）：在第 1 個區塊裡，第二個「m」可以學到「我前面那個字母也是 m」；要到第 2 個區塊，後面的詞元才能讀到這個發現並加以利用，例如「雙字母之後很可能接母音」。要怎麼多想幾輪？' },
       ],
       callout: { kind: 'insight', text: { en: 'Depth is about rounds: each block lets every token look around and think one more time.', zh: '深度講的就是「輪數」：每多一個區塊，每個詞元就能多看一次、多想一次。' } },
     },
@@ -103,7 +103,7 @@ export const stacking: Lesson = {
       short: { en: 'Refine', zh: '改進' }, chapter: 'technique',
       title: { en: 'Each block refines the guess', zh: '每個區塊都讓猜測更好' },
       body: [
-        lz(() => ({ en: `We can peek at the stream before the block by feeding it straight to the output layer. With only the embeddings, the guess after <code>.jimm</code> is rough: “y” gets ${pct(data().early[Y])}.`, zh: `我們可以偷看區塊之前的殘差流：直接把它送進輸出層。只靠嵌入的話，<code>.jimm</code> 之後的猜測很粗略：「y」只有 ${pct(data().early[Y])}。` })),
+        lz(() => ({ en: `We can peek at the stream before the block by feeding it straight to the output layer. With only the embeddings, the guess after <code>.jimm</code> is rough: “y” gets ${pct(data().early[Y])}. The vector still mostly says “I am an ${top(data().early, 1)[0].label}”, so the early reading guesses “${top(data().early, 1)[0].label}” (${pct(top(data().early, 1)[0].v)}).`, zh: `我們可以偷看區塊之前的殘差流：直接把它送進輸出層。只靠嵌入的話，<code>.jimm</code> 之後的猜測很粗略：「y」只有 ${pct(data().early[Y])}。這時向量大多還在說「我是 ${top(data().early, 1)[0].label}」，所以提早讀出的猜測是「${top(data().early, 1)[0].label}」（${pct(top(data().early, 1)[0].v)}）。` })),
         lz(() => ({ en: `After one block, “y” gets ${pct(data().late[Y])}. In a deep model each block adds its own correction to the stream, and the guess sharpens bit by bit.`, zh: `通過一個區塊之後，「y」變成 ${pct(data().late[Y])}。在很深的模型裡，每個區塊都往殘差流加上自己的修正，猜測就一點一點變準。` })),
       ],
       callout: { kind: 'note', text: { en: 'The output layer was trained to read the stream only at the very end, so the early reading is rough. It still shows the trend.', zh: '輸出層只學過讀取最後的殘差流，所以提早讀出的結果比較粗略，但仍看得出趨勢。' } },
@@ -123,7 +123,7 @@ export const stacking: Lesson = {
       short: { en: 'Two blocks', zh: '兩個區塊' }, chapter: 'problem',
       title: { en: 'Case: two blocks on our task', zh: '案例：在我們的任務上用兩個區塊' },
       body: [
-        { en: `We really trained a 1-block and a 2-block model the same way for ${fmt(V.steps)} steps. Held-out loss at the end: ${f3(last(V.base.val))} with 1 block, ${f3(last(V.layers2.val))} with 2. Best along the way: ${f3(best(V.base.val))} vs ${f3(best(V.layers2.val))}.`, zh: `我們真的用同樣的方法訓練了 1 區塊和 2 區塊的模型，各 ${fmt(V.steps)} 步。最後的保留資料損失：1 個區塊是 ${f3(last(V.base.val))}，2 個區塊是 ${f3(last(V.layers2.val))}；過程中最好的分別是 ${f3(best(V.base.val))} 和 ${f3(best(V.layers2.val))}。` },
+        { en: `We really trained a 1-block and a 2-block model the same way for ${fmt(V.steps)} steps (comparison runs, constant learning rate ${V.base.lr[0]}). Held-out loss (the loss on 615 names the model never trained on) at the end: ${f3(last(V.base.val))} with 1 block, ${f3(last(V.layers2.val))} with 2. Best along the way: ${f3(best(V.base.val))} vs ${f3(best(V.layers2.val))}.`, zh: `我們真的用同樣的方法訓練了 1 區塊和 2 區塊的模型，各 ${fmt(V.steps)} 步（比較實驗，學習率固定 ${V.base.lr[0]}）。最後的驗證損失（模型在訓練時從沒看過的 615 個名字上的損失）：1 個區塊是 ${f3(last(V.base.val))}，2 個區塊是 ${f3(last(V.layers2.val))}；過程中最好的分別是 ${f3(best(V.base.val))} 和 ${f3(best(V.layers2.val))}。` },
         { en: 'No gain. Our names are at most 7 letters and the patterns are simple, so one round already catches most of what the data can teach. The second block mostly fits the training names a little closer.', zh: '沒有進步。我們的名字最多 7 個字母，模式也很簡單，一輪就已經學到資料能教的大部分東西了。第二個區塊多半只是把訓練用的名字背得更緊一點。' },
       ],
       changed: [{ sign: '+', text: { en: 'Real runs: 1 vs 2 blocks', zh: '真實訓練：1 vs 2 個區塊' } }],
@@ -133,10 +133,10 @@ export const stacking: Lesson = {
       title: { en: 'Case: depth is not free', zh: '案例：加深不是免費的' },
       body: [
         { en: `The 2-block run took ${V.layers2.seconds} seconds against ${V.base.seconds}: every extra block is more work on every token, both when training and when writing.`, zh: `2 區塊的訓練花了 ${V.layers2.seconds} 秒，1 區塊是 ${V.base.seconds} 秒：每多一個區塊，每個詞元都要多算一輪，訓練和寫字時都一樣。` },
-        { en: `Its training loss is a bit lower (${f3(last(V.layers2.train))} vs ${f3(last(V.base.train))}) while its held-out loss is not. Extra capacity helps only when the task and the data are rich enough to use it.`, zh: `它的訓練損失低了一點（${f3(last(V.layers2.train))} 對 ${f3(last(V.base.train))}），保留資料損失卻沒有變好。多出來的容量，只有在任務和資料夠豐富時才派得上用場。` },
+        { en: `Its training loss (measured on the names it trains on) is a bit lower (${f3(last(V.layers2.train))} vs ${f3(last(V.base.train))}) while its held-out loss (on names it never saw) is not. Extra capacity helps only when the task and the data are rich enough to use it.`, zh: `它的訓練損失（在訓練用的名字上量的）低了一點（${f3(last(V.layers2.train))} 對 ${f3(last(V.base.train))}），驗證損失（在沒看過的名字上量的）卻沒有變好。多出來的容量，只有在任務和資料夠豐富時才派得上用場。` },
       ],
       callout: { kind: 'insight', text: { en: 'Big models are deep because their tasks are hard and their data is huge. Depth is a tool to match the problem, not a goal.', zh: '大型模型之所以深，是因為它們的任務難、資料又多。深度是用來配合問題的工具，不是目標。' } },
-      changed: [{ sign: '+', text: { en: 'Time and training-vs-held-out gap', zh: '時間，以及訓練與保留資料的落差' } }],
+      changed: [{ sign: '+', text: { en: 'Time and training-vs-held-out gap', zh: '時間，以及訓練損失與驗證損失的落差' } }],
     },
     {
       short: { en: 'Recap', zh: '回顧' }, chapter: 'recap',
@@ -221,7 +221,7 @@ export const stacking: Lesson = {
         series: s5 ? [{ pts: V.base.val, tone: 'a' }, { pts: V.layers2.val, tone: 'b' }]
           : [{ pts: V.base.train, tone: 'a' }, { pts: V.layers2.train, tone: 'b' }, { pts: V.base.val, tone: 'muted' }, { pts: V.layers2.val, tone: 'muted' }],
         xlabel: t({ en: 'training step', zh: '訓練步數' }),
-        ylabel: s5 ? t({ en: 'held-out loss', zh: '保留資料損失' }) : t({ en: 'training loss (grey: held-out)', zh: '訓練損失（灰色：保留資料）' }),
+        ylabel: s5 ? t({ en: 'held-out loss', zh: '驗證損失' }) : t({ en: 'training loss (grey: held-out)', zh: '訓練損失（灰色：驗證損失）' }),
       });
       const rowsAt = (y: number, label: L, tone: 'a' | 'b', vals: string) => {
         items.push({ k: 'rl' + y, t: 'text', x: 610, y, text: t(label), size: 15, bold: true, tone });
@@ -257,7 +257,7 @@ export const stacking: Lesson = {
         { label: { en: 'Weights per block', zh: '每個區塊的權重' }, value: step >= 1 ? fmt(d.att + d.mlp) : '—' },
         { label: { en: 'Total weights', zh: '總權重' }, value: step === 2 ? fmt(d.two) : step === 5 || step === 6 ? `${fmt(d.base)}/${fmt(d.two)}` : fmt(d.base) },
         { label: { en: 'P(“y”) after .jimm', zh: '.jimm 之後 P(「y」)' }, value: step === 3 ? `${pct(d.early[Y])} → ${pct(d.late[Y])}` : step === 0 ? pct(d.late[Y]) : '—' },
-        { label: { en: 'Held-out loss', zh: '保留資料損失' }, value: step >= 5 ? `${last(V.base.val).toFixed(2)}/${last(V.layers2.val).toFixed(2)}` : '—' },
+        { label: { en: 'Held-out loss', zh: '驗證損失' }, value: step >= 5 ? `${last(V.base.val).toFixed(2)}/${last(V.layers2.val).toFixed(2)}` : '—' },
       ],
       items,
       legend: [

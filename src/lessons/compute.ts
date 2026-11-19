@@ -5,9 +5,10 @@ import { GPT, type Weights } from '../model/gpt';
 import { TRAIN_NAMES, VAL_NAMES, example, rng } from '../model/data';
 import weights from '../model/weights.json';
 import experiments from '../model/experiments.json';
-import { bits32, bitsBF16, bitsF16, toBF16, toF16 } from './compute.float';
+import { bits32, bitsBF16, bitsF16, spacing, toBF16, toF16 } from './compute.float';
 
-// How much arithmetic our main training run did, and how numbers are stored while training.
+// How much arithmetic the logged run (experiments.main, 4,000 steps) did, and how numbers are stored
+// while training. The real weight and the held-out losses come from the course model (weights.json).
 
 const MAIN = experiments.main;
 const N = MAIN.params; // 3,115 weights
@@ -67,6 +68,29 @@ const FORMATS = [
 ] as const;
 
 const CELL = 24;
+const LAB = 7; // the rounding lab step
+const sig = (v: number) => (v === 0 ? '0' : !Number.isFinite(v) ? '∞' : Math.abs(v) >= 1000 ? fmt(+v.toPrecision(6)) : String(+v.toPrecision(4)));
+// one number in each format: bits, stored value, gap to the next number, and what happens to updates
+const labCache = new Map<string, { bits: string; stored: number; gap: number; moved1: number; moved100: number }[]>();
+function lab(v: number, du: number, master: boolean) {
+  const key = `${v}|${du}|${master}`;
+  let r = labCache.get(key);
+  if (!r) {
+    r = FORMATS.map((f) => {
+      const stored = f.round(v);
+      const gap = spacing(f.name, stored);
+      let x = stored, m = Math.fround(v), x1 = stored;
+      for (let i = 1; i <= 100; i++) {
+        if (master) { m = Math.fround(m + du); x = f.round(m); } else x = f.round(x + du);
+        if (i === 1) x1 = x;
+      }
+      return { bits: f.bits(v), stored, gap, moved1: x1 - stored, moved100: x - stored };
+    });
+    if (labCache.size > 400) labCache.clear();
+    labCache.set(key, r);
+  }
+  return r;
+}
 const X0 = 450 - (32 * CELL) / 2;
 
 export const computeLesson: Lesson = {
@@ -82,15 +106,15 @@ export const computeLesson: Lesson = {
     { text: { en: 'The 6 × weights × tokens rule of thumb', zh: '「6 × 權重 × 詞元」的經驗法則' }, step: 2 },
     { text: { en: 'How fp32, fp16 and bf16 store a number', zh: 'fp32、fp16、bf16 如何儲存一個數字' }, step: 4 },
     { text: { en: 'Why small updates vanish in 16 bits', zh: '為什麼小小的更新在 16 位元裡會消失' }, step: 6 },
-    { text: { en: 'How mixed precision keeps a 32-bit master copy', zh: '混合精度如何保留一份 32 位元的主副本' }, step: 7 },
-    { text: { en: 'What uses memory during training', zh: '訓練時記憶體花在哪裡' }, step: 8 },
+    { text: { en: 'How mixed precision keeps a 32-bit master copy', zh: '混合精度如何保留一份 32 位元的主副本' }, step: 8 },
+    { text: { en: 'What uses memory during training', zh: '訓練時記憶體花在哪裡' }, step: 9 },
   ],
   steps: [
     {
       short: { en: 'The problem', zh: '問題' }, chapter: 'problem',
       title: { en: 'How much work is one training run?', zh: '一次訓練要做多少工作？' },
       body: [
-        { en: 'Our main training run took 4,000 steps, and each step read a <b>batch</b> of 32 names: 128,000 names in all.', zh: '我們的主要訓練跑了 4,000 步，每一步讀一個 32 個名字的<b>批次</b>，總共讀了 128,000 個名字。' },
+        { en: 'Take <b>the logged run</b>, the training run whose every number was saved (the Evaluation and Real Run lessons read it too): 4,000 steps, and each step read a <b>batch</b> of 32 names, 128,000 names in all.', zh: '以<b>紀錄的訓練</b>為例，這是一次把每個數字都存下來的訓練（「檢查點與評估」和「讀懂一次真實的訓練」也會讀它）：共 4,000 步，每一步讀一個 32 個名字的<b>批次</b>，總共讀了 128,000 個名字。' },
         { en: 'Large models train on vastly more text with vastly more weights. Before buying computers for that, people estimate the cost. Let us do the estimate for our own run, with real numbers.', zh: '大型模型要用多得多的文字、多得多的權重來訓練。在花錢買電腦之前，大家會先估算成本。我們就用真實的數字，替自己的這次訓練估一次。' },
       ],
       callout: { kind: 'insight', text: { en: 'Two numbers decide the cost: how many weights the model has, and how many tokens it trains on.', zh: '決定成本的是兩個數字：模型有多少權重，以及它用多少詞元來訓練。' } },
@@ -100,7 +124,7 @@ export const computeLesson: Lesson = {
       title: { en: 'Count the tokens it learned from', zh: '數一數它學過多少詞元' },
       body: [
         { en: 'Each name is a set of little quizzes: <code>emma</code> asks the model to predict e, m, m, a and the end mark, so 5 predicted tokens. A name with n letters gives n + 1.', zh: '每個名字都是一組小考題：<code>emma</code> 要模型預測 e、m、m、a 和結尾符號，一共 5 個詞元。n 個字母的名字，就有 n + 1 題。' },
-        { en: 'We replayed the exact batches of the main run and counted: <b>824,179</b> predicted tokens, about 6.44 per name.', zh: '我們重播了主要訓練實際用的每一個批次，數出來是 <b>824,179</b> 個被預測的詞元，平均每個名字約 6.44 個。' },
+        { en: 'We replayed the exact batches of the logged run and counted: <b>824,179</b> predicted tokens, about 6.44 per name.', zh: '我們重播了紀錄的訓練實際用的每一個批次，數出來是 <b>824,179</b> 個被預測的詞元，平均每個名字約 6.44 個。' },
       ],
       changed: [{ sign: '+', text: { en: 'D = 824,179 training tokens', zh: 'D = 824,179 個訓練詞元' } }],
     },
@@ -109,7 +133,7 @@ export const computeLesson: Lesson = {
       title: { en: 'The rule of thumb: 6 × weights × tokens', zh: '經驗法則：6 × 權重 × 詞元' },
       body: [
         { en: 'For every token, the forward pass uses each weight about once: one multiply and one add, so about 2 operations per weight. The backward pass costs about twice that. Together: about <b>6 operations per weight per token</b>.', zh: '每處理一個詞元，前向計算大約會用到每個權重一次：一次乘法加一次加法，也就是每個權重約 2 次運算。反向計算大約是它的兩倍。加起來就是<b>每個權重、每個詞元約 6 次運算</b>。' },
-        { en: 'This rule, from the 2020 “Scaling Laws” paper by Kaplan and colleagues, gives 6 × 3,115 × 824,179 ≈ 1.54 × 10^10 floating-point operations for our run, which took 32.8 seconds.', zh: '這條法則出自 Kaplan 等人 2020 年的〈Scaling Laws〉論文。套到我們的訓練：6 × 3,115 × 824,179 ≈ 1.54 × 10^10 次浮點數運算，實際花了 32.8 秒。' },
+        { en: 'This rule, from the 2020 “Scaling Laws” paper by Kaplan and colleagues, gives 6 × 3,115 × 824,179 ≈ 1.54 × 10^10 floating-point operations for our run, which took 32.8 seconds. For scale: GPT-3 (175 billion weights, 300 billion tokens) took about 3.14 × 10^23, some 20 trillion times more.', zh: '這條法則出自 Kaplan 等人 2020 年的〈Scaling Laws〉論文。套到我們的訓練：6 × 3,115 × 824,179 ≈ 1.54 × 10^10 次浮點數運算，實際花了 32.8 秒。對照一下規模：GPT-3（1,750 億個權重、3,000 億個詞元）大約用了 3.14 × 10^23 次，是我們的 20 兆倍左右。' },
       ],
       callout: { kind: 'note', text: { en: 'It is an estimate. It ignores some work, such as attention between tokens, which is small for our 8-token window.', zh: '這只是估算，它忽略了一些運算，例如詞元之間的注意力計算；對我們只有 8 個詞元的視窗來說，這部分很小。' } },
       changed: [{ sign: '+', text: { en: 'Compute ≈ 1.54 × 10^10 operations', zh: '運算量 ≈ 1.54 × 10^10 次' } }],
@@ -119,7 +143,7 @@ export const computeLesson: Lesson = {
       title: { en: 'How a computer stores one weight', zh: '電腦如何儲存一個權重' },
       body: [
         { en: 'Weights are <b>floating-point</b> numbers, stored like scientific notation in binary: a <b>sign</b> (+ or −), an <b>exponent</b> (how big, roughly) and a <b>fraction</b> (the precise digits).', zh: '權重是<b>浮點數</b>，用二進位的科學記號儲存：一個<b>正負號</b>（+ 或 −）、一段<b>指數</b>（大約多大），和一段<b>小數</b>（精確的位數）。' },
-        { en: 'Here is a real weight of our trained model, from its position table, in the standard 32-bit format <b>fp32</b>: 1 + 8 + 23 bits, 4 bytes.', zh: '這是我們訓練好的模型裡一個真實的權重，來自位置表，用標準的 32 位元格式 <b>fp32</b> 儲存：1 + 8 + 23 個位元，共 4 個位元組。' },
+        { en: 'Here is a real weight of <b>the course model</b> (the trained model the lessons run): the largest one in the whole model, from its position table. It is stored in the standard 32-bit format <b>fp32</b>: 1 + 8 + 23 bits, 4 bytes.', zh: '這是<b>課程模型</b>（各課現場執行的那個訓練好的模型）裡一個真實的權重：整個模型裡最大的那一個，來自位置表。它用標準的 32 位元格式 <b>fp32</b> 儲存：1 + 8 + 23 個位元，共 4 個位元組。' },
       ],
       callout: { kind: 'note', text: { en: 'Our browser code actually computes with 64-bit numbers, which is simplest in JavaScript. Large models train with 32 and 16 bits.', zh: '我們在瀏覽器裡的程式其實是用 64 位元的數字在算，這在 JavaScript 裡最簡單。大型模型則用 32 位元和 16 位元訓練。' } },
     },
@@ -137,27 +161,36 @@ export const computeLesson: Lesson = {
       title: { en: 'Precision versus range', zh: '精度 vs 範圍' },
       body: [
         { en: 'fp16 is more precise, but its few exponent bits limit the range: above 65,504 it overflows to infinity, and tiny numbers like 0.00000001 become 0. bf16 has the same range as fp32, so it rarely overflows, but it is less precise.', zh: 'fp16 比較精確，但指數位元太少，範圍有限：超過 65,504 就溢位成無限大，而像 0.00000001 這樣的極小數會變成 0。bf16 的範圍和 fp32 一樣，幾乎不會溢位，但精度較差。' },
-        { en: 'For our trained model, rounding <i>every</i> weight barely matters: the held-out loss stays at 2.207 in all three formats.', zh: '對我們訓練好的模型來說，把<i>每一個</i>權重都四捨五入幾乎沒有影響：三種格式下，保留集上的損失都維持在 2.207。' },
+        { en: 'For the course model, rounding <i>every</i> weight barely matters: its held-out loss (the loss on 615 names it never trained on) stays at 2.207 in all three formats.', zh: '對課程模型來說，把<i>每一個</i>權重都四捨五入幾乎沒有影響：三種格式下，它的驗證損失（模型在訓練時從沒看過的 615 個名字上的損失）都維持在 2.207。' },
       ],
       callout: { kind: 'insight', text: { en: 'Using a trained model in 16 bits is usually fine. The trouble starts during training, when weights must change by tiny amounts.', zh: '用 16 位元來「使用」訓練好的模型，通常沒問題。麻煩出在訓練過程中，因為權重每次只能改變一點點。' } },
     },
     {
-      short: { en: 'Case: lost update', zh: '案例：更新消失' }, chapter: 'problem',
+      short: { en: 'Case: lost update', zh: '更新消失' }, chapter: 'problem',
       title: { en: 'Case: a small update disappears', zh: '案例：小小的更新不見了' },
       body: [
-        { en: 'At the end of our main run the learning rate was 0.002, so a weight moves by about that much per step. Add 0.002 to our weight stored in bf16, and the result rounds back to the very same number.', zh: '主要訓練快結束時，學習率是 0.002，所以一個權重每一步大約移動這麼多。把 0.002 加到用 bf16 儲存的權重上，結果四捨五入後又變回同一個數字。' },
+        { en: 'At the end of the logged run the learning rate was 0.002, so a weight moves by about that much per step. Add 0.002 to our weight stored in bf16, and the result rounds back to the very same number.', zh: '紀錄的訓練快結束時，學習率是 0.002，所以一個權重每一步大約移動這麼多。把 0.002 加到用 bf16 儲存的權重上，結果四捨五入後又變回同一個數字。' },
         { en: 'Repeat it 100 times: in fp32 the weight moves by 0.2 as it should; in bf16 it never moves at all. fp16 keeps up only because 0.002 is just above its spacing near 2.3 (about 0.002); a smaller step would vanish there too.', zh: '重複 100 次：在 fp32 中，權重如預期移動了 0.2；在 bf16 中，它一動也不動。fp16 還撐得住，只是因為 0.002 剛好大於它在 2.3 附近的間距（約 0.002）；更小的一步在 fp16 裡也會消失。' },
       ],
-      callout: { kind: 'insight', text: { en: 'Near 2.3, bf16 can only store numbers about 0.016 apart. Any change smaller than half of that is rounded away.', zh: '在 2.3 附近，bf16 能儲存的數字彼此相差約 0.016。任何小於這個間距一半的改變，都會被四捨五入掉。' } },
+      callout: { kind: 'insight', text: { en: 'Near 2.3, bf16 can only store numbers about 0.016 apart; any change smaller than half of that is rounded away. Our weight is the largest in the model, where the gaps are widest. But large models train with far smaller learning rates (GPT-3’s largest used 0.00006), and near 0.1 bf16 numbers are about 0.0005 apart, so the problem hits almost every weight.', zh: '在 2.3 附近，bf16 能儲存的數字彼此相差約 0.016；任何小於這個間距一半的改變，都會被四捨五入掉。我們的權重是模型裡最大的，間距也最寬。但大型模型用的學習率小得多（GPT-3 最大的模型用 0.00006），而在 0.1 附近，bf16 的數字彼此相差約 0.0005，所以這個問題幾乎會落在每一個權重上。' } },
+    },
+    {
+      short: { en: 'Rounding lab', zh: '捨入實驗' }, chapter: 'technique',
+      title: { en: 'Try it: the rounding lab', zh: '動手試試：捨入實驗室' },
+      body: [
+        { en: 'Try it: drag the number and the update size, and watch each format’s bits, the gap to its next storable number, and whether 1 and 100 updates survive. Then switch on the fp32 master copy.', zh: '動手試試：拖動數字和更新的大小，看看每種格式的位元、到下一個能存的數字的間距，以及加 1 次、加 100 次更新後還剩多少。然後打開 fp32 主副本。' },
+        { en: 'The rule to discover: an update smaller than half the gap is lost, and the gap doubles at every power of two (1, 2, 4, …). Push the number above 65,504 or below 0.0000001 to watch fp16 run out of range.', zh: '要發現的規則是：小於間距一半的更新會消失，而每過一個 2 的次方（1、2、4……），間距就加倍。把數字推到 65,504 以上或 0.0000001 以下，看 fp16 的範圍用完。' },
+      ],
+      callout: { kind: 'note', text: { en: 'It starts at our case: the course model’s largest weight (its size, about 2.3) and the logged run’s last learning rate, 0.002.', zh: '一開始的設定就是上一步的案例：課程模型最大的權重（大小約 2.3），加上紀錄的訓練最後的學習率 0.002。' } },
     },
     {
       short: { en: 'Mixed precision', zh: '混合精度' }, chapter: 'solution',
       title: { en: 'Mixed precision: 16-bit work, 32-bit memory', zh: '混合精度：用 16 位元計算，用 32 位元記住' },
       body: [
         { en: 'The fix, described by Micikevicius and colleagues (2018): keep a <b>master copy</b> of every weight in fp32. For each step, round it to a 16-bit copy and do the heavy forward and backward arithmetic with that.', zh: '解法由 Micikevicius 等人（2018）提出：每個權重都保留一份 fp32 的<b>主副本</b>。每一步先把它四捨五入成 16 位元的副本，用它來做繁重的前向和反向計算。' },
-        { en: 'The update is then added to the fp32 master, where small changes survive. GPUs do 16-bit arithmetic much faster, so most of the work gets cheaper while learning stays exact enough.', zh: '接著把更新加到 fp32 主副本上，小小的改變就能保留下來。GPU 做 16 位元運算快得多，所以大部分的工作變便宜了，學習卻依然夠精確。' },
+        { en: 'The update is then added to the fp32 master, where small changes survive. GPUs (the graphics chips that do the arithmetic) do 16-bit arithmetic much faster, so most of the work gets cheaper while learning stays exact enough.', zh: '接著把更新加到 fp32 主副本上，小小的改變就能保留下來。GPU（負責做運算的顯示晶片）做 16 位元運算快得多，所以大部分的工作變便宜了，學習卻依然夠精確。' },
       ],
-      callout: { kind: 'note', text: { en: 'With fp16, tiny gradients can also round to 0. So training multiplies the loss by a big factor first (loss scaling) and divides the gradients back afterwards.', zh: '使用 fp16 時，極小的梯度也可能被捨入成 0。所以訓練時會先把損失乘上一個大倍數（損失縮放），算完梯度再除回來。' } },
+      callout: { kind: 'note', text: { en: 'With fp16, tiny gradients can also round to 0, so training multiplies the loss by a big factor first (loss scaling) and divides the gradients back afterwards. bf16 has fp32’s range and usually needs no loss scaling, one reason many large models now train in bf16.', zh: '使用 fp16 時，極小的梯度也可能被捨入成 0，所以訓練時會先把損失乘上一個大倍數（損失縮放），算完梯度再除回來。bf16 的範圍和 fp32 一樣，通常不需要損失縮放，這也是現在許多大型模型改用 bf16 訓練的原因之一。' } },
       changed: [{ sign: '+', text: { en: 'fp32 master weights', zh: 'fp32 主權重' } }, { sign: '~', text: { en: 'forward and backward in 16 bits', zh: '前向與反向改用 16 位元' } }],
     },
     {
@@ -165,9 +198,9 @@ export const computeLesson: Lesson = {
       title: { en: 'Memory: about 16 bytes per weight', zh: '記憶體：每個權重約 16 個位元組' },
       body: [
         { en: 'Training with the Adam optimizer keeps, for every weight: the weight, its gradient, and Adam’s two running averages. In fp32 that is 4 + 4 + 4 + 4 = 16 bytes. Mixed precision is 2 + 2 + 4 + 4 + 4 = 16 bytes too, because of the master copy.', zh: '用 Adam 最佳化器訓練時，每個權重都要存：權重本身、它的梯度，以及 Adam 的兩個移動平均。用 fp32 就是 4 + 4 + 4 + 4 = 16 個位元組。混合精度因為多了主副本，2 + 2 + 4 + 4 + 4 也是 16 個位元組。' },
-        { en: 'Our model: 3,115 × 16 = 49,840 bytes, about 50 KB. The ZeRO paper’s example: a 7.5-billion-weight model needs 120 GB just for this, before counting the activations.', zh: '我們的模型：3,115 × 16 = 49,840 個位元組，大約 50 KB。ZeRO 論文舉的例子：一個 75 億權重的模型光是這些就需要 120 GB，還沒算激活值。' },
+        { en: 'Our model: 3,115 × 16 = 49,840 bytes, about 50 KB. The ZeRO paper’s example: a 7.5-billion-weight model needs 120 GB just for this, before counting the <b>activations</b> (every intermediate result of the forward pass, kept so the backward pass can use them).', zh: '我們的模型：3,115 × 16 = 49,840 個位元組，大約 50 KB。ZeRO 論文舉的例子：一個 75 億權重的模型光是這些就需要 120 GB，還沒算<b>活化值</b>（前向計算的每一個中間結果，要留著給反向計算用）。' },
       ],
-      callout: { kind: 'insight', text: { en: 'Mixed precision saves time, not this memory. The memory win comes from the 16-bit activations and from tricks like LoRA, coming up soon.', zh: '混合精度省的是時間，不是這部分的記憶體。記憶體上的好處來自 16 位元的激活值，以及像 LoRA 這樣的技巧（很快就會介紹）。' } },
+      callout: { kind: 'insight', text: { en: 'Mixed precision saves time, not this memory. The memory win comes from the 16-bit activations and from tricks like LoRA, coming up soon.', zh: '混合精度省的是時間，不是這部分的記憶體。記憶體上的好處來自 16 位元的活化值，以及像 LoRA 這樣的技巧（很快就會介紹）。' } },
     },
     {
       short: { en: 'Recap', zh: '回顧' }, chapter: 'recap',
@@ -179,7 +212,7 @@ export const computeLesson: Lesson = {
     },
   ],
 
-  scene(step) {
+  scene(step, input = {}) {
     const items: Item[] = [];
     const D = step >= 1 ? data() : undefined;
     let tokens = '—', flops = '—', bytes = '—';
@@ -259,7 +292,7 @@ export const computeLesson: Lesson = {
           items.push({ k: `tv${i}-${j}`, t: 'box', x: colX[j], y, w: 180, h: 48, label, tone: bad ? 'bad' : 'ink' });
         });
       });
-      items.push({ k: 'ml', t: 'text', x: 60, y: 330, text: t({ en: 'every weight of our model rounded · held-out loss', zh: '把模型每個權重都四捨五入 · 保留集損失' }), size: 14, tone: 'muted' });
+      items.push({ k: 'ml', t: 'text', x: 60, y: 330, text: t({ en: 'every weight of our model rounded · held-out loss', zh: '把模型每個權重都四捨五入 · 驗證損失' }), size: 14, tone: 'muted' });
       (['f32', 'f16', 'bf16'] as const).forEach((k, i) => {
         items.push({ k: 'ml' + i, t: 'box', x: colX[i], y: 350, w: 180, h: 56, label: D.loss[k].toFixed(4), sub: ['fp32', 'fp16', 'bf16'][i], tone: 'a' });
       });
@@ -287,7 +320,30 @@ export const computeLesson: Lesson = {
       items.push({ k: 'ut', t: 'text', x: 450, y: 440, text: t({ en: `should move: 100 × ${D.lrEnd} = ${(100 * D.lrEnd).toFixed(1)}`, zh: `應該移動：100 × ${D.lrEnd} = ${(100 * D.lrEnd).toFixed(1)}` }), size: 15, anchor: 'middle', bold: true });
     }
 
-    if (step === 7) {
+    if (step === LAB && D) {
+      const v = 10 ** Number(input.w ?? Math.log10(Math.abs(D.w)));
+      const du = 10 ** Number(input.du ?? Math.log10(D.lrEnd));
+      const master = Boolean(input.master);
+      const L = lab(v, du, master);
+      const C = 20, X = 40;
+      L.forEach((r, i) => {
+        const y = 52 + i * 150;
+        const f = FORMATS[i];
+        items.push({ k: 'lt' + i, t: 'text', x: X, y: y - 12, text: `${f.name} · ${t({ en: `1 sign + ${f.exp} exponent + ${f.frac} fraction bits`, zh: `1 個正負號 + ${f.exp} 個指數 + ${f.frac} 個小數位元` })}`, size: 14, bold: true });
+        [...r.bits].forEach((b, j) => items.push({ k: `lb${i}_${j}`, t: 'box', x: X + j * C, y, w: C - 3, h: 26, label: b, tone: j === 0 ? 'b' : j <= f.exp ? 'a' : 'ink' }));
+        const bad = !Number.isFinite(r.stored) || r.stored === 0;
+        items.push({ k: 'ls' + i, t: 'text', x: X, y: y + 48, size: 14, mono: true, tone: bad ? 'bad' : 'ink', text: bad
+          ? t({ en: !Number.isFinite(r.stored) ? 'stores ∞: too big for this format (overflow)' : 'stores 0: too small for this format (underflow)', zh: !Number.isFinite(r.stored) ? '存成 ∞：對這種格式太大了（溢位）' : '存成 0：對這種格式太小了（下溢）' })
+          : t({ en: `stores ${sig(r.stored)} · error ${sig(Math.abs(r.stored - v))} · gap to next number ${sig(r.gap)}`, zh: `存成 ${sig(r.stored)} · 誤差 ${sig(Math.abs(r.stored - v))} · 到下一個數字的間距 ${sig(r.gap)}` }) });
+        const lost = r.moved1 === 0, ok = Math.abs(r.moved100 - 100 * du) <= 0.05 * 100 * du;
+        items.push({ k: 'lu' + i, t: 'text', x: X, y: y + 74, size: 14, mono: true, tone: bad ? 'muted' : lost || !ok ? 'bad' : 'a', bold: !bad, text: bad ? '—'
+          : t({ en: `+1 update: moved ${sig(r.moved1)}${lost ? ' (lost)' : ''} · +100 updates: moved ${sig(r.moved100)}${master && i > 0 ? ' (via fp32 master)' : ''}`, zh: `加 1 次：移動 ${sig(r.moved1)}${lost ? '（消失）' : ''} · 加 100 次：移動 ${sig(r.moved100)}${master && i > 0 ? '（經由 fp32 主副本）' : ''}` }) });
+      });
+      items.push({ k: 'lw', t: 'text', x: 880, y: 500, anchor: 'end', size: 14, bold: true, text: t({ en: `wanted: 1 × ${sig(du)}, then 100 × = ${sig(100 * du)}`, zh: `應該移動：1 次 ${sig(du)}，100 次 = ${sig(100 * du)}` }) });
+      bytes = '4 / 2 / 2';
+    }
+
+    if (step === 8) {
       const B = (k: string, x: number, y: number, label: string, sub: string, tone: Tone = 'ink') => items.push({ k, t: 'box', x, y, w: 230, h: 70, label, sub, tone });
       B('m0', 50, 80, t({ en: 'master weights', zh: '主權重' }), t({ en: 'fp32 · 4 bytes', zh: 'fp32 · 4 個位元組' }), 'a');
       B('m1', 335, 80, t({ en: 'rounded copy', zh: '捨入後的副本' }), t({ en: '16 bits · 2 bytes', zh: '16 位元 · 2 個位元組' }), 'b');
@@ -304,7 +360,7 @@ export const computeLesson: Lesson = {
       bytes = '2 + 4';
     }
 
-    if (step === 8) {
+    if (step === 9) {
       const SC = 40;
       const bar = (k: string, y: number, title: string, segs: { b: number; sub: string; tone: Tone }[]) => {
         items.push({ k: k + 't', t: 'text', x: 60, y: y - 12, text: title, size: 14.5, bold: true });
@@ -319,11 +375,11 @@ export const computeLesson: Lesson = {
         { b: 2, sub: W, tone: 'b' }, { b: 2, sub: G, tone: 'b' }, { b: 4, sub: t({ en: 'fp32 master', zh: 'fp32 主副本' }), tone: 'a' }, { b: 4, sub: A1, tone: 'muted' }, { b: 4, sub: A2, tone: 'muted' }]);
       items.push({ k: 'mo1', t: 'box', x: 60, y: 320, w: 380, h: 70, label: `${fmt(N)} × 16 = ${fmt(N * 16)} B`, sub: t({ en: 'our model · about 50 KB', zh: '我們的模型 · 約 50 KB' }), tone: 'a' });
       items.push({ k: 'mo2', t: 'box', x: 470, y: 320, w: 380, h: 70, label: t({ en: '7.5 billion × 16 = 120 GB', zh: '75 億 × 16 = 120 GB' }), sub: t({ en: 'example from the ZeRO paper', zh: 'ZeRO 論文中的例子' }), tone: 'bad' });
-      items.push({ k: 'mo3', t: 'text', x: 450, y: 440, text: t({ en: 'plus the activations, which grow with the batch size', zh: '另外還要加上激活值，它會隨批次大小增加' }), size: 14, anchor: 'middle', tone: 'muted' });
+      items.push({ k: 'mo3', t: 'text', x: 450, y: 440, text: t({ en: 'plus the activations, which grow with the batch size', zh: '另外還要加上活化值，它會隨批次大小增加' }), size: 14, anchor: 'middle', tone: 'muted' });
       bytes = '16';
     }
 
-    if (step === 9 && D) {
+    if (step === 10 && D) {
       const cards = [
         { label: `≈ ${sci(D.flops)}`, sub: t({ en: 'compute: 6 × N × D', zh: '運算量：6 × N × D' }), tone: 'a' as Tone },
         { label: 'fp32 · fp16 · bf16', sub: t({ en: '4 · 2 · 2 bytes', zh: '4 · 2 · 2 個位元組' }), tone: 'ink' as Tone },
@@ -337,6 +393,24 @@ export const computeLesson: Lesson = {
     if (D) { tokens = fmt(D.tokens); }
     if (step >= 2 && D) flops = sci(D.flops).replace(' × 10^', 'e');
     if (step === 1) bytes = '—';
+
+    if (step === LAB && D) {
+      const r = lab(10 ** Number(input.w ?? Math.log10(Math.abs(D.w))), 10 ** Number(input.du ?? Math.log10(D.lrEnd)), Boolean(input.master));
+      return {
+        metrics: [
+          { label: { en: 'fp16 gap', zh: 'fp16 間距' }, value: sig(r[1].gap) },
+          { label: { en: 'bf16 gap', zh: 'bf16 間距' }, value: sig(r[2].gap) },
+          { label: { en: 'Bytes per weight', zh: '每個權重的位元組' }, value: bytes },
+        ],
+        items,
+        legend: [{ tone: 'b', text: { en: 'sign', zh: '正負號' } }, { tone: 'a', text: { en: 'exponent', zh: '指數' } }, { tone: 'bad', text: { en: 'update lost or wrong', zh: '更新消失或不準' } }],
+        controls: [
+          { key: 'w', kind: 'slider', label: { en: 'Number', zh: '數字' }, min: -8, max: 5, step: 0.01, value: +Math.log10(Math.abs(D.w)).toFixed(2), format: (v) => sig(+(10 ** v).toPrecision(3)) },
+          { key: 'du', kind: 'slider', label: { en: 'Update', zh: '更新' }, min: -6, max: -1, step: 0.01, value: +Math.log10(D.lrEnd).toFixed(2), format: (v) => sig(+(10 ** v).toPrecision(2)) },
+          { key: 'master', kind: 'toggle', label: { en: 'fp32 master copy', zh: 'fp32 主副本' }, value: false },
+        ],
+      };
+    }
 
     return {
       metrics: [

@@ -5,13 +5,13 @@ import { GPT, type Weights } from '../model/gpt';
 import { rng } from '../model/data';
 import weights from '../model/weights.json';
 import experiments from '../model/experiments.json';
+import { ADAPTED, FT_SETS, finish, newRun, slice, type FtRun } from './fine-tuning.run'; // ADAPTED: the weights the LoRA run adapted
 
 // LoRA on the course model: the real shapes of its matrices, and the real fine-tuning runs
 // (scripts/experiments.ts) with LoRA rank 2 versus changing every weight.
 
 const FT = experiments.finetune;
 const RANK = FT.lora.rank;
-const ADAPTED = ['q0', 'k0', 'v0', 'o', 'w1', 'w2', 'u']; // the weights the LoRA run adapted
 const STEPS = (FT.full.val.length - 1) * FT.full.every;
 
 interface Shapes { rows: { name: string; r: number; c: number }[]; total: number; lora: number; B0: number[][] }
@@ -35,6 +35,29 @@ const best = (v: number[]) => Math.min(...v);
 const BIG = 4096, BIG_R = 8; // an example size, not our model
 const U = { r: 16, c: 27 }; // the output matrix u, checked against the model in the shapes table
 const PX = 10; // pixels per row/column when drawing u
+const LR = FT.lora.lr[0];
+const bestOf = (v: number[], every: number) => { const m = Math.min(...v); return { loss: m, step: v.indexOf(m) * every }; };
+const LBEST = bestOf(FT.lora.val, FT.lora.every), FBEST = bestOf(FT.full.val, FT.full.every);
+
+// The experiment's rank-2 adapter at its best step, replayed in the browser: the real A, B and A·B of u.
+interface Real { A: number[][]; B: number[][]; dW: number[][]; hi: number }
+let realCache: Real | undefined;
+const REAL = () => realCache ??= (() => {
+  const r = finish(newRun(RANK, LR), LBEST.step, FT.lora.every);
+  const { A, B } = r.model.lora.u;
+  const rowsOf = (m: { r: number; row(i: number): number[] }) => Array.from({ length: m.r }, (_, i) => m.row(i));
+  const a = rowsOf(A), b = rowsOf(B);
+  const dW = a.map((ar) => b[0].map((_, j) => ar.reduce((s, v, k) => s + v * b[k][j], 0)));
+  const norms = dW.map((row) => Math.hypot(...row));
+  return { A: a, B: b, dW, hi: norms.indexOf(Math.max(...norms)) };
+})();
+
+// The rank slider: adapters of any rank, fine-tuned live on the 40 names (same setup as the experiment).
+const LIVE_STEPS = 20, LIVE_EVERY = 4, TRY_STEP = 7;
+const runs = new Map<number, FtRun>();
+const liveRun = (rank: number) => { let r = runs.get(rank); if (!r) { r = newRun(rank, LR); runs.set(rank, r); } return r; };
+const rankOf = (v: unknown) => Math.min(8, Math.max(1, Math.round(Number(v) || RANK)));
+const loraSize = (rank: number) => rank * ADAPTED.reduce((s, n) => s + (FT_SETS().base.p[n].r + FT_SETS().base.p[n].c), 0);
 
 export const lora: Lesson = {
   id: 'lora',
@@ -48,9 +71,10 @@ export const lora: Lesson = {
   learn: [
     { text: { en: 'Why changing every weight is costly', zh: '為什麼改動每個權重代價很高' }, step: 0 },
     { text: { en: 'How A·B makes a low-rank correction', zh: 'A·B 如何組成低秩修正' }, step: 3 },
-    { text: { en: 'Why the adapter starts at zero', zh: '為什麼外掛一開始是零' }, step: 4 },
+    { text: { en: 'Why the adapter starts at zero', zh: '為什麼轉接器一開始是零' }, step: 4 },
     { text: { en: 'How close LoRA gets to full fine-tuning', zh: 'LoRA 和完整微調的效果有多接近' }, step: 6 },
-    { text: { en: 'Why it matters at large scale', zh: '為什麼它在大規模時特別重要' }, step: 7 },
+    { text: { en: 'What the rank changes', zh: '秩改變了什麼' }, step: 7 },
+    { text: { en: 'Why it matters at large scale', zh: '為什麼它在大規模時特別重要' }, step: 8 },
   ],
   steps: [
     {
@@ -60,7 +84,7 @@ export const lora: Lesson = {
         { en: 'In the last lesson, fine-tuning on 40 names ending in “a” changed all 3,115 weights. The result is a whole second model.', zh: '上一課用 40 個以「a」結尾的名字做微調，改動了全部 3,115 個權重，結果就是一整個新模型。' },
         { en: 'For our tiny model that is fine. For a model with billions of weights, every task would need its own full copy, plus gradients and Adam’s averages for every weight while training.', zh: '對我們的小模型來說沒問題。但如果模型有數十億個權重，每個任務都得有自己的一整份副本，訓練時每個權重還要存梯度和 Adam 的平均值。' },
       ],
-      callout: { kind: 'insight', text: { en: 'Idea: the change needed for one small task is probably simple. Maybe we can describe it with far fewer numbers.', zh: '想法：一個小任務所需要的改變，可能很單純。也許可以用少得多的數字來描述它。' } },
+      callout: { kind: 'insight', text: { en: 'Idea: the change needed for one small task is probably simple. Turning “names in general” into “names ending in a” is mostly one nudge (raise “a” before the end mark), not 3,115 independent changes. Maybe we can describe it with far fewer numbers.', zh: '想法：一個小任務所需要的改變，可能很單純。把「一般的名字」變成「以 a 結尾的名字」，主要就是一個方向的推動（在結尾前提高「a」），而不是 3,115 個各自獨立的改變。也許可以用少得多的數字來描述它。' } },
     },
     {
       short: { en: 'One matrix', zh: '一個矩陣' }, chapter: 'technique',
@@ -83,8 +107,8 @@ export const lora: Lesson = {
       short: { en: 'A · B', zh: 'A · B' }, chapter: 'technique',
       title: { en: 'Build the correction from two thin matrices', zh: '用兩個細長矩陣組出修正量' },
       body: [
-        { en: `<b>LoRA</b> (low-rank adaptation) builds ΔW as a product <b>A · B</b>. A is 16 × ${RANK} and B is ${RANK} × 27; multiplied, they give a full 16 × 27 matrix.`, zh: `<b>LoRA</b>（low-rank adaptation，低秩調適）把 ΔW 做成乘積 <b>A · B</b>。A 是 16 × ${RANK}，B 是 ${RANK} × 27；兩者相乘，就得到完整的 16 × 27 矩陣。` },
-        { en: `But it is made from only 16 × ${RANK} + ${RANK} × 27 = <b>${16 * RANK + RANK * 27}</b> numbers instead of 432. The middle size, ${RANK}, is the <b>rank</b>: every row of ΔW is a mix of just ${RANK} patterns (the rows of B).`, zh: `但它只用了 16 × ${RANK} + ${RANK} × 27 = <b>${16 * RANK + RANK * 27}</b> 個數字，而不是 432 個。中間那個尺寸 ${RANK} 就是<b>秩（rank）</b>：ΔW 的每一列，都只是 ${RANK} 個圖樣（B 的各列）的混合。` },
+        { en: `<b>LoRA</b> (low-rank adaptation) builds ΔW as a product <b>A · B</b>. A is 16 × ${RANK} and B is ${RANK} × 27; multiplied, they give a full 16 × 27 matrix, made from only 16 × ${RANK} + ${RANK} × 27 = <b>${16 * RANK + RANK * 27}</b> numbers instead of 432.`, zh: `<b>LoRA</b>（low-rank adaptation，低秩調適）把 ΔW 做成乘積 <b>A · B</b>。A 是 16 × ${RANK}，B 是 ${RANK} × 27；兩者相乘，就得到完整的 16 × 27 矩陣，卻只用了 16 × ${RANK} + ${RANK} × 27 = <b>${16 * RANK + RANK * 27}</b> 個數字，而不是 432 個。` },
+        { en: `These are the real A, B and A · B of <code>u</code> after ${LBEST.step} steps of the LoRA run, replayed in your browser. Every row of ΔW is a mix of just ${RANK} patterns, the rows of B: the highlighted row is a₁ × (B row 1) + a₂ × (B row 2), with a₁, a₂ from the same row of A. That middle size, ${RANK}, is the <b>rank</b>.`, zh: `這是 LoRA 訓練跑了 ${LBEST.step} 步之後，<code>u</code> 真實的 A、B 和 A · B（就在你的瀏覽器裡重跑）。ΔW 的每一列，都只是 ${RANK} 個圖樣（B 的各列）的混合：標出的那一列 = a₁ × （B 的第 1 列）+ a₂ × （B 的第 2 列），a₁、a₂ 來自 A 的同一列。中間那個尺寸 ${RANK}，就是<b>秩（rank）</b>。` },
       ],
       callout: { kind: 'note', text: { en: 'A low rank limits which changes are possible. The bet is that a small task needs only a simple change.', zh: '秩很低，代表能做的改變有限制。LoRA 賭的是：小任務只需要簡單的改變。' } },
       changed: [{ sign: '~', text: { en: `ΔW = A · B: 432 → ${16 * RANK + RANK * 27} numbers`, zh: `ΔW = A · B：432 → ${16 * RANK + RANK * 27} 個數字` } }],
@@ -94,27 +118,38 @@ export const lora: Lesson = {
       title: { en: 'Start with no change at all', zh: '一開始完全不改變' },
       body: [
         { en: 'A starts with small random numbers, but B starts at exactly <b>zero</b>. Anything times zero is zero, so at first A · B = 0 and the model is exactly the pretrained one.', zh: 'A 一開始是小小的隨機數，B 則剛好從<b>零</b>開始。任何數乘以零都是零，所以一開始 A · B = 0，模型就和預訓練的一模一樣。' },
-        { en: `You can check it in the real runs: before any training, the LoRA model’s held-out loss is ${FT.lora.val[0].toFixed(3)}, identical to the pretrained model’s ${FT.baseValLoss.toFixed(3)}. Training then grows the correction from nothing.`, zh: `真實的訓練紀錄可以驗證：訓練之前，LoRA 模型在保留集上的損失是 ${FT.lora.val[0].toFixed(3)}，和預訓練模型的 ${FT.baseValLoss.toFixed(3)} 完全相同。接著，訓練會讓修正量從無到有慢慢長出來。` },
+        { en: `You can check it in the real runs: before any training, the LoRA model’s held-out loss (on the held-out names ending in “a”) is ${FT.lora.val[0].toFixed(3)}, identical to the pretrained model’s ${FT.baseValLoss.toFixed(3)}. Training then grows the correction from nothing.`, zh: `真實的訓練紀錄可以驗證：訓練之前，LoRA 模型的驗證損失（在驗證集中以「a」結尾的名字上的損失）是 ${FT.lora.val[0].toFixed(3)}，和預訓練模型的 ${FT.baseValLoss.toFixed(3)} 完全相同。接著，訓練會讓修正量從無到有慢慢長出來。` },
       ],
+      callout: { kind: 'insight', text: { en: 'Why not start both at zero? A’s gradient is multiplied by B, and B’s by A. With both at zero, both gradients would be zero and neither could ever move. One random, one zero: the output starts unchanged, but training can still get going.', zh: '為什麼不兩個都從零開始？A 的梯度要乘上 B，B 的梯度要乘上 A。如果兩個都是零，兩邊的梯度都是零，誰都動不了。一個隨機、一個為零：輸出一開始完全不變，訓練卻還是能啟動。' } },
       changed: [{ sign: '+', text: { en: 'B = 0 at the start', zh: '一開始 B = 0' } }],
     },
     {
       short: { en: 'Whole model', zh: '整個模型' }, chapter: 'technique',
-      title: { en: 'An adapter on seven matrices', zh: '在七個矩陣上加外掛' },
+      title: { en: 'An adapter on seven matrices', zh: '在七個矩陣上加轉接器' },
       body: [
-        { en: `Our LoRA run adds a rank-${RANK} adapter to seven matrices: the attention matrices <code>q0</code>, <code>k0</code>, <code>v0</code>, <code>o</code>, the MLP’s <code>w1</code>, <code>w2</code>, and the output <code>u</code>. The embeddings and biases stay frozen.`, zh: `我們的 LoRA 訓練在七個矩陣上加了秩 ${RANK} 的外掛：注意力的 <code>q0</code>、<code>k0</code>、<code>v0</code>、<code>o</code>，MLP 的 <code>w1</code>、<code>w2</code>，以及輸出的 <code>u</code>。嵌入和偏差值都保持凍結。` },
+        { en: `Our LoRA run adds a rank-${RANK} adapter to seven matrices: the attention matrices <code>q0</code>, <code>k0</code>, <code>v0</code>, <code>o</code>, the MLP’s <code>w1</code>, <code>w2</code>, and the output <code>u</code>. The embeddings and biases stay frozen.`, zh: `我們的 LoRA 訓練在七個矩陣上加了秩 ${RANK} 的轉接器（adapter）：注意力的 <code>q0</code>、<code>k0</code>、<code>v0</code>、<code>o</code>，MLP 的 <code>w1</code>、<code>w2</code>，以及輸出的 <code>u</code>。嵌入和偏差都保持凍結。` },
         { en: 'Adding up the table: <b>534</b> trainable numbers instead of 3,115, about 17% of the model.', zh: '把表格加總：要訓練的數字只有 <b>534</b> 個，而不是 3,115 個，大約是模型的 17%。' },
       ],
+      callout: { kind: 'note', text: { en: 'In real LoRA code you will see W + A · B × (α / r), where α is a fixed number chosen by hand. Our runs set α = r, so the factor is just 1.', zh: '在真實的 LoRA 程式碼裡，你會看到 W + A · B × (α / r)，其中 α 是人工選定的固定數字。我們的訓練設 α = r，所以這個係數就是 1。' } },
       changed: [{ sign: '~', text: { en: 'Trainable: 3,115 → 534', zh: '要訓練的：3,115 → 534' } }],
     },
     {
       short: { en: 'Result', zh: '結果' }, chapter: 'solution',
       title: { en: 'Nearly the same result', zh: '結果幾乎一樣' },
       body: [
-        { en: `On the same 40 names, LoRA reaches a best held-out loss of <b>${best(FT.lora.val).toFixed(2)}</b>, against ${best(FT.full.val).toFixed(2)} for changing every weight. Both are far better than training from scratch (${best(FT.scratch.val).toFixed(2)}).`, zh: `用同樣的 40 個名字，LoRA 在保留集上最好的損失是 <b>${best(FT.lora.val).toFixed(2)}</b>，改動全部權重則是 ${best(FT.full.val).toFixed(2)}。兩者都遠比從頭訓練（${best(FT.scratch.val).toFixed(2)}）好。` },
-        { en: `After ${STEPS} steps, ${pct(FT.lora.endsA)} of LoRA’s names end in “a” (full fine-tuning: ${pct(FT.full.endsA)}). A tiny bit worse, with 17% of the trainable numbers.`, zh: `跑完 ${STEPS} 步後，LoRA 寫的名字有 ${pct(FT.lora.endsA)} 以「a」結尾（完整微調：${pct(FT.full.endsA)}）。只差一點點，而要訓練的數字只有 17%。` },
+        { en: `On the same 40 names, LoRA reaches its best held-out loss, <b>${LBEST.loss.toFixed(2)}</b>, at step ${LBEST.step}; changing every weight reaches ${FBEST.loss.toFixed(2)} at step ${FBEST.step}. A tiny bit worse, with 17% of the trainable numbers, and both far better than training from scratch (${best(FT.scratch.val).toFixed(2)}).`, zh: `用同樣的 40 個名字，LoRA 在第 ${LBEST.step} 步達到最好的驗證損失 <b>${LBEST.loss.toFixed(2)}</b>；改動全部權重則在第 ${FBEST.step} 步達到 ${FBEST.loss.toFixed(2)}。只差一點點，而要訓練的數字只有 17%，兩者也都遠比從頭訓練（${best(FT.scratch.val).toFixed(2)}）好。` },
+        { en: `Both runs went on to step ${STEPS} and both over-trained: the lines climb back above the dashed pretrained line. At that point ${pct(FT.lora.endsA)} of LoRA’s names end in “a” (full fine-tuning: ${pct(FT.full.endsA)}), partly by copying the 40 names.`, zh: `兩次訓練都繼續跑到第 ${STEPS} 步，也都練過頭了：線又爬回預訓練的虛線之上。那時 LoRA 寫的名字有 ${pct(FT.lora.endsA)} 以「a」結尾（完整微調：${pct(FT.full.endsA)}），有一部分是照抄那 40 個名字。` },
       ],
-      callout: { kind: 'note', text: { en: 'LoRA used a higher learning rate (0.02 vs 0.003), which is common: the adapter starts from zero and has fewer numbers to move. It also overfits if trained too long.', zh: 'LoRA 用了較高的學習率（0.02 對 0.003），這很常見：外掛從零開始，要移動的數字也比較少。訓練太久，它一樣會過度擬合。' } },
+      callout: { kind: 'note', text: { en: 'LoRA used a higher learning rate (0.02 vs 0.003), which is common: the adapter starts from zero and has fewer numbers to move.', zh: 'LoRA 用了較高的學習率（0.02 對 0.003），這很常見：轉接器從零開始，要移動的數字也比較少。' } },
+    },
+    {
+      short: { en: 'Try a rank', zh: '試試秩' }, chapter: 'technique',
+      title: { en: 'Try it: pick the rank yourself', zh: '動手試試：自己挑秩' },
+      body: [
+        { en: `Try it: drag the rank from 1 to 8 and watch the trainable count, the held-out curve and ΔW of <code>u</code>. Each new rank trains fresh adapters on the same seven matrices, right here: ${LIVE_STEPS} steps on the 40 names, learning rate ${LR}, like the experiment.`, zh: `動手試試：把秩從 1 拖到 8，看看要訓練的數字、驗證損失曲線和 <code>u</code> 的 ΔW 怎麼變。每換一個秩，就在同樣七個矩陣上、就在這裡訓練一組新的轉接器：用那 40 個名字跑 ${LIVE_STEPS} 步，學習率 ${LR}，和實驗一樣。` },
+        { en: 'A higher rank means more numbers to train and more kinds of change ΔW can make. Notice that on this small task even rank 1 gets close to full fine-tuning, and high ranks overfit sooner: their curve turns up earlier. At rank 1, every row of ΔW is the same pattern, only scaled.', zh: '秩越高，要訓練的數字越多，ΔW 能做的改變也越多樣。注意：在這個小任務上，連秩 1 都很接近完整微調；秩很高時反而更早過度擬合，曲線更早往上翹。秩 1 時，ΔW 的每一列都是同一個圖樣，只是放大縮小。' },
+      ],
+      callout: { kind: 'note', text: { en: 'The gray line is full fine-tuning from the experiment; the dashed line is the pretrained model. Ranks you already tried are kept, so switching back is instant.', zh: '灰線是實驗中的完整微調；虛線是預訓練模型。試過的秩會保留下來，切回去馬上就有結果。' } },
     },
     {
       short: { en: 'Case: scale', zh: '案例：規模' }, chapter: 'problem',
@@ -125,25 +160,25 @@ export const lora: Lesson = {
       ],
     },
     {
-      short: { en: 'Adapters', zh: '外掛' }, chapter: 'technique',
-      title: { en: 'One base model, many small adapters', zh: '一個基礎模型，許多小外掛' },
+      short: { en: 'Adapters', zh: '轉接器' }, chapter: 'technique',
+      title: { en: 'One base model, many small adapters', zh: '一個基礎模型，許多小轉接器' },
       body: [
-        { en: 'Because W never changes, the base model is stored once. Each task keeps only its own A and B. Our “ends in a” adapter is 534 numbers; others can be swapped in when needed.', zh: '因為 W 從不改變，基礎模型只需要存一份，每個任務只保留自己的 A 和 B。我們的「以 a 結尾」外掛只有 534 個數字；其他外掛需要時再換上去即可。' },
+        { en: 'Because W never changes, the base model is stored once. Each task keeps only its own A and B. Our “ends in a” adapter is 534 numbers; others can be swapped in when needed.', zh: '因為 W 從不改變，基礎模型只需要存一份，每個任務只保留自己的 A 和 B。我們的「以 a 結尾」轉接器只有 534 個數字；其他轉接器需要時再換上去即可。' },
         { en: 'Training is lighter too: gradients and Adam’s two averages are needed only for trainable numbers. With 4 bytes each: full fine-tuning needs 49,840 bytes, LoRA 21,004.', zh: '訓練也比較輕：只有要訓練的數字才需要梯度和 Adam 的兩個平均值。每個 4 個位元組來算：完整微調需要 49,840 個位元組，LoRA 只要 21,004。' },
       ],
-      callout: { kind: 'note', text: { en: 'The other adapters drawn here are an illustration; only the “ends in a” one was trained.', zh: '圖中其他的外掛只是示意；真正訓練過的只有「以 a 結尾」這一個。' } },
+      callout: { kind: 'note', text: { en: 'The other adapters drawn here are an illustration; only the “ends in a” one was trained.', zh: '圖中其他的轉接器只是示意；真正訓練過的只有「以 a 結尾」這一個。' } },
     },
     {
       short: { en: 'Recap', zh: '回顧' }, chapter: 'recap',
       title: { en: 'A small correction instead of a new model', zh: '用小修正取代新模型' },
       body: [
-        { en: `<b>Freeze</b> W, learn ΔW = <b>A · B</b> with a small rank r.<br><b>B starts at 0</b>: training begins from the pretrained model.<br><b>Our model</b>: 534 trainable vs 3,115; best loss ${best(FT.lora.val).toFixed(2)} vs ${best(FT.full.val).toFixed(2)}.<br><b>At scale</b>: ${BIG} × ${BIG} with rank ${BIG_R} is ${(100 * BIG_R * 2 * BIG / (BIG * BIG)).toFixed(2)}% of the weights; one base, many adapters.`, zh: `<b>凍結</b> W，用小的秩 r 學 ΔW = <b>A · B</b>。<br><b>B 從 0 開始</b>：訓練從預訓練模型出發。<br><b>我們的模型</b>：要訓練的 534 個對 3,115 個；最佳損失 ${best(FT.lora.val).toFixed(2)} 對 ${best(FT.full.val).toFixed(2)}。<br><b>大規模時</b>：${BIG} × ${BIG}、秩 ${BIG_R} 只佔權重的 ${(100 * BIG_R * 2 * BIG / (BIG * BIG)).toFixed(2)}%；一個基礎模型，許多外掛。` },
+        { en: `<b>Freeze</b> W, learn ΔW = <b>A · B</b> with a small rank r.<br><b>B starts at 0</b>: training begins from the pretrained model.<br><b>Our model</b>: 534 trainable vs 3,115; best loss ${best(FT.lora.val).toFixed(2)} vs ${best(FT.full.val).toFixed(2)}.<br><b>At scale</b>: ${BIG} × ${BIG} with rank ${BIG_R} is ${(100 * BIG_R * 2 * BIG / (BIG * BIG)).toFixed(2)}% of the weights; one base, many adapters.`, zh: `<b>凍結</b> W，用小的秩 r 學 ΔW = <b>A · B</b>。<br><b>B 從 0 開始</b>：訓練從預訓練模型出發。<br><b>我們的模型</b>：要訓練的 534 個對 3,115 個；最佳驗證損失 ${best(FT.lora.val).toFixed(2)} 對 ${best(FT.full.val).toFixed(2)}。<br><b>大規模時</b>：${BIG} × ${BIG}、秩 ${BIG_R} 只佔權重的 ${(100 * BIG_R * 2 * BIG / (BIG * BIG)).toFixed(2)}%；一個基礎模型，許多轉接器。` },
       ],
       callout: { kind: 'next', text: { en: 'Next: Training Mixture-of-Experts Models. Keeping many experts busy, balanced and spread across machines.', zh: '下一課：訓練混合專家模型。如何讓許多專家都有事做、分工平均，並分散到多台機器上。' } },
     },
   ],
 
-  scene(step) {
+  scene(step, input = {}) {
     const items: Item[] = [];
     const S = shapes();
     let trainable = fmt(S.total), share = '100%', lossV = '—', ends = '—';
@@ -165,7 +200,7 @@ export const lora: Lesson = {
       items.push({ k: 'cost2', t: 'text', x: 450, y: 362, text: t({ en: 'and, while training, a gradient and two Adam averages per weight', zh: '而且訓練時，每個權重還要一個梯度和兩個 Adam 平均值' }), anchor: 'middle', size: 14, tone: 'muted' });
     }
 
-    if (step >= 1 && step <= 4) {
+    if (step >= 1 && step <= 4 && step !== 3) {
       drawW(step >= 2);
       const r = RANK * PX;
       if (step >= 2) {
@@ -192,6 +227,64 @@ export const lora: Lesson = {
       if (step === 4) lossV = FT.lora.val[0].toFixed(3);
     }
 
+    if (step === 3) {
+      // the real rank-2 adapter of u: A (16 × 2), B (2 × 27), and their product ΔW (16 × 27)
+      const R = REAL(), C = 15, X = 260, BY = 62, DY = 140, RH = 23;
+      const mx = (m: number[][]) => Math.max(1e-9, ...m.flat().map(Math.abs));
+      const mA = mx(R.A), mB = mx(R.B), mD = mx(R.dW);
+      items.push({ k: 'hiBox', t: 'box', x: 192, y: DY + R.hi * RH - 4, w: X + 27 * C - 192 + 6, h: 30, tone: 'a' });
+      [...'.abcdefghijklmnopqrstuvwxyz'].forEach((ch, j) => items.push({ k: 'col' + j, t: 'text', x: X + j * C + 6, y: BY - 12, text: ch, size: 11, mono: true, anchor: 'middle', tone: ch === 'a' || ch === '.' ? 'a' : 'muted', bold: ch === 'a' || ch === '.' }));
+      R.B.forEach((row, k) => {
+        items.push({ k: 'Bv' + k, t: 'vec', x: X, y: BY + k * 28, v: row, cell: C, max: mB });
+        items.push({ k: 'Bn' + k, t: 'text', x: X - 10, y: BY + k * 28 + 16, text: t({ en: `B row ${k + 1}`, zh: `B 第 ${k + 1} 列` }), size: 13, anchor: 'end', tone: 'b', bold: true });
+      });
+      items.push({ k: 'Al', t: 'text', x: 215, y: DY - 12, text: `A 16×${RANK}`, size: 13, anchor: 'middle', bold: true, tone: 'a' });
+      items.push({ k: 'dWl', t: 'text', x: X, y: DY - 12, text: t({ en: 'ΔW = A · B (16 × 27), the change to u', zh: 'ΔW = A · B（16 × 27），u 的改變量' }), size: 13, bold: true });
+      R.dW.forEach((row, i) => {
+        items.push({ k: 'Av' + i, t: 'vec', x: 200, y: DY + i * RH, v: R.A[i], cell: C, max: mA });
+        items.push({ k: 'Dv' + i, t: 'vec', x: X, y: DY + i * RH, v: row, cell: C, max: mD });
+      });
+      const a = R.A[R.hi], sg = (v: number) => (v < 0 ? `(−${Math.abs(v).toFixed(2)})` : v.toFixed(2));
+      const fx = X + 27 * C + 22, fy = DY + R.hi * RH;
+      items.push({ k: 'f0', t: 'text', x: fx, y: Math.min(fy, 400) - 4, text: t({ en: `row ${R.hi + 1} of ΔW`, zh: `ΔW 第 ${R.hi + 1} 列` }), size: 13, bold: true, tone: 'a' });
+      items.push({ k: 'f1', t: 'text', x: fx, y: Math.min(fy, 400) + 20, text: t({ en: `= ${sg(a[0])} × B row 1`, zh: `= ${sg(a[0])} × B 第 1 列` }), size: 13, mono: true });
+      items.push({ k: 'f2', t: 'text', x: fx, y: Math.min(fy, 400) + 42, text: t({ en: `+ ${sg(a[1])} × B row 2`, zh: `+ ${sg(a[1])} × B 第 2 列` }), size: 13, mono: true });
+      items.push({ k: 'f3', t: 'text', x: fx, y: 470, text: t({ en: 'colour = sign, shade = size', zh: '顏色 = 正負，深淺 = 大小' }), size: 12, tone: 'muted' });
+      trainable = String(16 * RANK + RANK * 27); share = pct((16 * RANK + RANK * 27) / (U.r * U.c));
+    }
+
+    if (step === TRY_STEP) {
+      const rank = rankOf(input.rank), r = liveRun(rank);
+      const n = loraSize(rank), uN = rank * (U.r + U.c);
+      const pts = r.val, b = pts.length ? bestOf(pts, LIVE_EVERY) : undefined;
+      const ymin = 1.8, ymax = 2.5;
+      items.push({
+        k: 'chart', t: 'chart', x: 80, y: 50, w: 400, h: 220, ymin, ymax, xmax: LIVE_STEPS, every: LIVE_EVERY,
+        series: [{ pts: FT.full.val.slice(0, LIVE_STEPS / FT.full.every + 1), tone: 'muted' }, { pts, tone: 'a' }],
+        xlabel: t({ en: 'fine-tuning steps', zh: '微調步數' }), ylabel: t({ en: 'held-out loss, names ending in “a”', zh: '驗證損失（以「a」結尾的名字）' }),
+        guide: { y: FT.baseValLoss, label: t({ en: `pretrained · ${FT.baseValLoss.toFixed(2)}`, zh: `預訓練 · ${FT.baseValLoss.toFixed(2)}` }) },
+      });
+      if (b) {
+        const x = 80 + (b.step / LIVE_STEPS) * 400, y = 50 + 220 - ((b.loss - ymin) / (ymax - ymin)) * 220;
+        items.push({ k: 'bdot', t: 'dot', x, y, r: 6, tone: 'a' });
+      }
+      const lines: [string, Tone, boolean][] = [
+        [t({ en: `rank ${rank} · for u: 16×${rank} + ${rank}×27 = ${uN}`, zh: `秩 ${rank} · u 的部分：16×${rank} + ${rank}×27 = ${uN}` }), 'ink', false],
+        [t({ en: `all 7 matrices: ${fmt(n)} trainable of ${fmt(S.total)} (${pct(n / S.total)})`, zh: `七個矩陣合計：${fmt(S.total)} 個中要訓練 ${fmt(n)} 個（${pct(n / S.total)}）` }), 'a', true],
+        [b ? t({ en: `best held-out so far: ${b.loss.toFixed(3)} at step ${b.step}`, zh: `目前最好的驗證損失：第 ${b.step} 步的 ${b.loss.toFixed(3)}` }) : t({ en: 'training…', zh: '訓練中…' }), 'a', true],
+        [t({ en: `full fine-tuning: ${FBEST.loss.toFixed(3)} at step ${FBEST.step}, ${fmt(S.total)} trainable`, zh: `完整微調：第 ${FBEST.step} 步 ${FBEST.loss.toFixed(3)}，要訓練 ${fmt(S.total)} 個` }), 'muted', false],
+      ];
+      lines.forEach(([text, tone, bold], i) => items.push({ k: 'tl' + i, t: 'text', x: 40, y: 345 + i * 30, text, size: 15, tone, bold }));
+      const { A, B } = r.model.lora.u;
+      const dW = Array.from({ length: A.r }, (_, i) => Array.from({ length: B.c }, (_, j) => { let v = 0; for (let k = 0; k < A.c; k++) v += A.d[i * A.c + k] * B.d[k * B.c + j]; return v; }));
+      const mD = Math.max(0.05, ...dW.flat().map(Math.abs));
+      items.push({ k: 'dWl', t: 'text', x: 540, y: 44, text: t({ en: `ΔW of u at rank ${rank} (16 × 27)`, zh: `秩 ${rank} 時 u 的 ΔW（16 × 27）` }), size: 13, bold: true });
+      [...'.abcdefghijklmnopqrstuvwxyz'].forEach((ch, j) => (ch === '.' || ch === 'a') && items.push({ k: 'col' + j, t: 'text', x: 540 + j * 11 + 5, y: 64, text: ch, size: 12, mono: true, anchor: 'middle', tone: 'a', bold: true }));
+      dW.forEach((row, i) => items.push({ k: 'Dv' + i, t: 'vec', x: 540, y: 74 + i * 24, v: row, max: mD }));
+      trainable = fmt(n); share = pct(n / S.total); lossV = b ? b.loss.toFixed(3) : '—';
+      ends = `${r.step} / ${LIVE_STEPS}`;
+    }
+
     if (step === 5) {
       const cols = [60, 220, 380, 560, 740];
       const head = [t({ en: 'matrix', zh: '矩陣' }), t({ en: 'shape', zh: '形狀' }), t({ en: 'full', zh: '完整' }), t({ en: `rank ${RANK}: A + B`, zh: `秩 ${RANK}：A + B` }), t({ en: 'share', zh: '比例' })];
@@ -206,7 +299,7 @@ export const lora: Lesson = {
       });
       const y = 82 + S.rows.length * 40 + 20;
       items.push({ k: 'sumbox', t: 'box', x: 40, y: y - 30, w: 820, h: 44, tone: 'a' });
-      items.push({ k: 'sum0', t: 'text', x: 60, y, text: t({ en: 'adapters', zh: '外掛合計' }), size: 15, bold: true });
+      items.push({ k: 'sum0', t: 'text', x: 60, y, text: t({ en: 'adapters', zh: '轉接器合計' }), size: 15, bold: true });
       items.push({ k: 'sum1', t: 'text', x: 380, y, text: fmt(sumFull), size: 15, mono: true, bold: true });
       items.push({ k: 'sum2', t: 'text', x: 560, y, text: fmt(sumL), size: 15, mono: true, bold: true, tone: 'a' });
       items.push({ k: 'sum3', t: 'text', x: 740, y, text: pct(sumL / sumFull), size: 15, mono: true, bold: true });
@@ -219,7 +312,7 @@ export const lora: Lesson = {
       items.push({
         k: 'chart', t: 'chart', x: 80, y: 50, w: 480, h: 250, ymin, ymax, xmax: STEPS, every: FT.full.every,
         series: [{ pts: FT.full.val, tone: 'muted' }, { pts: FT.lora.val, tone: 'a' }],
-        xlabel: t({ en: 'fine-tuning steps', zh: '微調步數' }), ylabel: t({ en: 'loss on held-out names ending in “a”', zh: '以「a」結尾的保留名字上的損失' }),
+        xlabel: t({ en: 'fine-tuning steps', zh: '微調步數' }), ylabel: t({ en: 'loss on held-out names ending in “a”', zh: '驗證集中以「a」結尾的名字上的損失' }),
         guide: { y: FT.baseValLoss, label: t({ en: `pretrained · ${FT.baseValLoss.toFixed(2)}`, zh: `預訓練 · ${FT.baseValLoss.toFixed(2)}` }) },
       });
       items.push({ k: 'r1', t: 'box', x: 620, y: 60, w: 250, h: 66, label: t({ en: `LoRA · best ${best(FT.lora.val).toFixed(2)}`, zh: `LoRA · 最佳 ${best(FT.lora.val).toFixed(2)}` }), sub: t({ en: `${fmt(S.lora)} trainable · ${pct(FT.lora.endsA)} end in “a”`, zh: `訓練 ${fmt(S.lora)} 個 · ${pct(FT.lora.endsA)} 以「a」結尾` }), tone: 'a' });
@@ -227,10 +320,10 @@ export const lora: Lesson = {
       items.push({ k: 'r3', t: 'box', x: 620, y: 232, w: 250, h: 66, label: t({ en: `scratch · best ${best(FT.scratch.val).toFixed(2)}`, zh: `從頭訓練 · 最佳 ${best(FT.scratch.val).toFixed(2)}` }), sub: t({ en: 'for comparison', zh: '對照用' }), tone: 'b' });
       items.push({ k: 'sl', t: 'text', x: 40, y: 400, text: t({ en: `LoRA model writes (after ${STEPS} steps):`, zh: `LoRA 模型寫出（跑完 ${STEPS} 步）：` }), size: 14, tone: 'muted' });
       FT.lora.samples['80'].forEach((n, i) => items.push({ k: 's' + i, t: 'box', x: 40 + i * 104, y: 410, w: 96, h: 40, label: n, tone: n.endsWith('a') ? 'a' : 'ink' }));
-      trainable = fmt(S.lora); share = pct(S.lora / S.total); lossV = best(FT.lora.val).toFixed(2); ends = pct(FT.lora.endsA);
+      trainable = fmt(S.lora); share = pct(S.lora / S.total); lossV = best(FT.lora.val).toFixed(2); ends = `${pct(FT.lora.endsA)} @${STEPS}`;
     }
 
-    if (step === 7) {
+    if (step === 8) {
       // drawn to scale: a 300-pixel square stands for 4096 × 4096
       const side = 300, thin = Math.max(3, (BIG_R / BIG) * side);
       items.push({ k: 'W', t: 'box', x: 80, y: 120, w: side, h: side, label: `${BIG} × ${BIG}`, sub: fmt(BIG * BIG), tone: 'muted' });
@@ -246,7 +339,7 @@ export const lora: Lesson = {
       trainable = fmt(BIG_R * 2 * BIG); share = (100 * BIG_R * 2 * BIG / (BIG * BIG)).toFixed(2) + '%';
     }
 
-    if (step === 8) {
+    if (step === 9) {
       const full = S.total * 16; // weight + gradient + two Adam averages, 4 bytes each
       const lo = S.total * 4 + S.lora * 16; // frozen weights, plus adapters with their gradients and averages
       items.push({ k: 'base', t: 'box', x: 330, y: 40, w: 240, h: 80, label: t({ en: 'pretrained model', zh: '預訓練模型' }), sub: t({ en: `stored once · ${fmt(S.total)} weights`, zh: `只存一份 · ${fmt(S.total)} 個權重` }) });
@@ -264,10 +357,10 @@ export const lora: Lesson = {
       items.push({ k: 'mf', t: 'box', x: 90, y: 315, w: full * scale, h: 50, label: t({ en: `full: ${fmt(S.total)} × 16 = ${fmt(full)} B`, zh: `完整微調：${fmt(S.total)} × 16 = ${fmt(full)} B` }), tone: 'b' });
       items.push({ k: 'ml', t: 'box', x: 90, y: 385, w: lo * scale, h: 50, label: t({ en: `LoRA: ${fmt(lo)} B`, zh: `LoRA：${fmt(lo)} B` }), tone: 'a' });
       items.push({ k: 'mlx', t: 'text', x: 90 + lo * scale + 12, y: 415, text: t({ en: `${fmt(S.total)} × 4 frozen + ${fmt(S.lora)} × 16`, zh: `凍結的 ${fmt(S.total)} × 4 + ${fmt(S.lora)} × 16` }), size: 14, mono: true, tone: 'muted' });
-      trainable = fmt(S.lora); share = pct(S.lora / S.total); lossV = best(FT.lora.val).toFixed(2); ends = pct(FT.lora.endsA);
+      trainable = fmt(S.lora); share = pct(S.lora / S.total); lossV = best(FT.lora.val).toFixed(2); ends = `${pct(FT.lora.endsA)} @${STEPS}`;
     }
 
-    if (step === 9) {
+    if (step === 10) {
       drawW(true, 60);
       const dx = 60 + W.w + 60, r = RANK * PX;
       items.push({ k: 'plus', t: 'text', x: 60 + W.w + 30, y: W.y + W.h / 2 + 10, text: '+', size: 30, anchor: 'middle', bold: true });
@@ -275,18 +368,32 @@ export const lora: Lesson = {
       items.push({ k: 'B', t: 'box', x: dx + r + 10, y: W.y - r - 10, w: W.w, h: r, tone: 'a' });
       items.push({ k: 'dW', t: 'box', x: dx + r + 10, y: W.y, w: W.w, h: W.h, label: 'A · B', sub: t({ en: 'learned, starts at 0', zh: '學出來的，從 0 開始' }), tone: 'muted' });
       items.push({ k: 'cnt', t: 'text', x: 450, y: 420, text: t({ en: `${fmt(S.lora)} trainable of ${fmt(S.total)} · best loss ${best(FT.lora.val).toFixed(2)} vs ${best(FT.full.val).toFixed(2)}`, zh: `訓練 ${fmt(S.total)} 個中的 ${fmt(S.lora)} 個 · 最佳損失 ${best(FT.lora.val).toFixed(2)} 對 ${best(FT.full.val).toFixed(2)}` }), anchor: 'middle', size: 16, bold: true, tone: 'a' });
-      trainable = fmt(S.lora); share = pct(S.lora / S.total); lossV = best(FT.lora.val).toFixed(2); ends = pct(FT.lora.endsA);
+      trainable = fmt(S.lora); share = pct(S.lora / S.total); lossV = best(FT.lora.val).toFixed(2); ends = `${pct(FT.lora.endsA)} @${STEPS}`;
     }
 
     return {
       metrics: [
         { label: { en: 'Trainable', zh: '要訓練的數字' }, value: trainable },
         { label: { en: 'Share', zh: '比例' }, value: share },
-        { label: { en: 'Held-out loss', zh: '保留集損失' }, value: lossV },
-        { label: { en: 'Ends in “a”', zh: '以「a」結尾' }, value: ends },
+        { label: { en: 'Held-out loss', zh: '驗證損失' }, value: lossV },
+        step === TRY_STEP ? { label: { en: 'Steps', zh: '步數' }, value: ends } : { label: { en: 'Ends in “a”', zh: '以「a」結尾' }, value: ends },
       ],
       items,
-      legend: step === 6 ? [{ tone: 'a', text: { en: 'LoRA, rank 2 (the gray line is full fine-tuning)', zh: 'LoRA，秩 2（灰線是完整微調）' } }] : undefined,
+      legend: step === 6 ? [{ tone: 'a', text: { en: 'LoRA, rank 2 (the gray line is full fine-tuning)', zh: 'LoRA，秩 2（灰線是完整微調）' } }]
+        : step === TRY_STEP ? [{ tone: 'a', text: { en: 'LoRA at your rank, trained live (dot = best so far)', zh: '你選的秩，現場訓練的 LoRA（圓點 = 目前最佳）' } }, { tone: 'pos', text: { en: 'ΔW positive', zh: 'ΔW 正數' } }, { tone: 'neg', text: { en: 'negative', zh: '負數' } }]
+        : step === 3 ? [{ tone: 'pos', text: { en: 'positive', zh: '正數' } }, { tone: 'neg', text: { en: 'negative', zh: '負數' } }] : undefined,
+      controls: step === TRY_STEP ? [{ key: 'rank', kind: 'slider', label: { en: 'Rank r', zh: '秩 r' }, min: 1, max: 8, step: 1, value: RANK }] : undefined,
     };
   },
+
+  tick(step, input) {
+    if (step !== TRY_STEP) return false;
+    const r = liveRun(rankOf(input.rank));
+    const until = performance.now() + 10;
+    let more = true;
+    while (more && performance.now() < until) more = slice(r, LIVE_STEPS, LIVE_EVERY);
+    return more;
+  },
+
+  reset() { runs.clear(); },
 };

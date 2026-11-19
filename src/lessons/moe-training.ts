@@ -28,8 +28,29 @@ interface Run {
   counts: number[]; f: number[]; P: number[]; balance: number;
   cap: { cf: number; cap: number; dropped: number; loss: number }[]; lossAll: number;
   route: { ch: string; e: number }[][]; // the chosen expert of every token, per name
+  toks: { e: number; lossIn: number; lossOut: number }[]; // every token in batch order
 }
 interface Data { names: string[]; tokens: number; bal: Run; nob: Run }
+
+/** Apply a capacity limit to the tokens in batch order: once an expert is full, later tokens overflow. */
+function capacity(toks: Run['toks'], cf: number) {
+  const T = toks.length, c = Math.floor((cf * T) / E);
+  const used = new Array(E).fill(0), drop = new Array(E).fill(0);
+  let dropped = 0, loss = 0;
+  for (const tk of toks) {
+    if (used[tk.e] < c) { used[tk.e]++; loss += tk.lossIn; } else { dropped++; drop[tk.e]++; loss += tk.lossOut; }
+  }
+  return { cf, cap: c, dropped, drop, loss: loss / T };
+}
+const capMemo = new Map<string, ReturnType<typeof capacity>>();
+const capAt = (which: 'bal' | 'nob', cf: number) => {
+  const k = which + cf;
+  let r = capMemo.get(k);
+  if (!r) { r = capacity(data()[which].toks, cf); capMemo.set(k, r); }
+  return r;
+};
+const CAP_STEP = 6;
+const cfOf = (v: unknown) => Math.min(2.5, Math.max(0.5, Number(v) || 1));
 
 function measure(w: Weights, batch: { x: number[]; y: number[] }[]): Run {
   const m = GPT.fromJSON(w);
@@ -55,18 +76,9 @@ function measure(w: Weights, batch: { x: number[]; y: number[] }[]): Run {
   }
   const T = toks.length;
   const f = counts.map((c) => c / T), Pm = psum.map((p) => p / T);
-  const cap = CFS.map((cf) => {
-    const c = Math.floor((cf * T) / E);
-    const used = new Array(E).fill(0);
-    let dropped = 0, loss = 0;
-    for (const tk of toks) {
-      if (used[tk.e] < c) { used[tk.e]++; loss += tk.lossIn; } else { dropped++; loss += tk.lossOut; }
-    }
-    return { cf, cap: c, dropped, loss: loss / T };
-  });
   return {
     counts, f, P: Pm, balance: E * f.reduce((s, v, e) => s + v * Pm[e], 0),
-    cap, lossAll: toks.reduce((s, tk) => s + tk.lossIn, 0) / T, route,
+    cap: CFS.map((cf) => capacity(toks, cf)), lossAll: toks.reduce((s, tk) => s + tk.lossIn, 0) / T, route, toks,
   };
 }
 
@@ -108,7 +120,7 @@ export const moeTraining: Lesson = {
       short: { en: 'The problem', zh: '問題' }, chapter: 'problem',
       title: { en: 'One expert gets most of the work', zh: '一個專家包辦了大部分工作' },
       body: [
-        { en: 'We trained a 4-expert model with nothing to encourage sharing. On 200 held-out names, the router ended up sending each expert this share of the tokens.', zh: '我們訓練了一個 4 專家模型，完全沒有任何鼓勵「分工」的機制。在 200 個保留名字上，路由器最後送給每個專家的詞元比例如下。' },
+        { en: 'We trained a 4-expert model with nothing to encourage sharing. On 200 held-out names (names it never trained on), the router ended up sending each expert this share of the tokens.', zh: '我們訓練了一個 4 專家模型，完全沒有任何鼓勵「分工」的機制。在 200 個驗證集名字（模型訓練時從沒看過的名字）上，路由器最後送給每個專家的詞元比例如下。' },
         { en: `Expert E2 gets <b>${last(UN)[2]}%</b> and E1 only ${last(UN)[1]}%. If the work were split evenly, each would get 25%.`, zh: `專家 E2 拿到 <b>${last(UN)[2]}%</b>，E1 只有 ${last(UN)[1]}%。如果平均分配，每個專家應該各拿 25%。` },
       ],
       callout: { kind: 'insight', text: { en: 'An expert that gets few tokens also gets little training, so it stays weak, and the router has even less reason to pick it.', zh: '拿到很少詞元的專家，得到的訓練也很少，所以一直很弱，路由器就更沒有理由選它。' } },
@@ -127,9 +139,9 @@ export const moeTraining: Lesson = {
       title: { en: 'A loss that measures imbalance', zh: '一個衡量分配不均的損失' },
       body: [
         { en: 'For each expert take two numbers on a batch: <b>f</b>, the share of tokens actually sent to it, and <b>P</b>, the router’s average probability for it. The loss is 4 × the sum of f × P over the 4 experts.', zh: '對每個專家，在一個批次上取兩個數字：<b>f</b> 是實際送給它的詞元比例，<b>P</b> 是路由器給它的平均機率。損失 = 4 × 把 4 個專家的 f × P 加起來。' },
-        lz(() => ({ en: `If everything is even (f = P = 25%), it equals exactly 1. On our real batch of ${NB} held-out names (${data().tokens} tokens), the balanced model scores <b>${data().bal.balance.toFixed(3)}</b>.`, zh: `如果完全平均（f = P = 25%），結果剛好是 1。在我們真實的 ${NB} 個保留名字批次上（${data().tokens} 個詞元），有平衡的模型得到 <b>${data().bal.balance.toFixed(3)}</b>。` })),
+        lz(() => ({ en: `If everything is even (f = P = 25%), it equals exactly 1. On our real batch of ${NB} held-out names (${data().tokens} tokens), the balanced model scores <b>${data().bal.balance.toFixed(3)}</b>.`, zh: `如果完全平均（f = P = 25%），結果剛好是 1。在我們真實的 ${NB} 個驗證集名字批次上（${data().tokens} 個詞元），有平衡的模型得到 <b>${data().bal.balance.toFixed(3)}</b>。` })),
       ],
-      callout: { kind: 'note', text: { en: 'f alone cannot be trained (picking the top expert has no gradient), but P can. Pairing them pushes probability away from overloaded experts.', zh: '單靠 f 沒辦法訓練（「挑最高分」這個動作沒有梯度），但 P 可以。把兩者配在一起，就能把機率從太忙的專家身上推開。' } },
+      callout: { kind: 'note', text: { en: 'f alone cannot be trained (picking the top expert has no gradient), but P can. The loss grows by f for every bit of probability given to an expert, so the push away from a busy expert (big f) is the strongest.', zh: '單靠 f 沒辦法訓練（「挑最高分」這個動作沒有梯度），但 P 可以。給某個專家的機率每多一點，損失就增加 f 那麼多，所以把機率從忙碌的專家（f 大）身上推開的力道最強。' } },
       changed: [{ sign: '+', text: { en: 'f and P on a real batch', zh: '真實批次上的 f 和 P' } }],
     },
     {
@@ -146,10 +158,10 @@ export const moeTraining: Lesson = {
       short: { en: 'Quality', zh: '品質' }, chapter: 'problem',
       title: { en: 'Case: does imbalance hurt quality?', zh: '案例：分配不均會傷害品質嗎？' },
       body: [
-        { en: `Not at our size. Held-out loss after 1,500 steps: balanced <b>${VB.toFixed(3)}</b>, unbalanced <b>${VN.toFixed(3)}</b>. Practically the same.`, zh: `在我們的規模下不會。訓練 1,500 步後的保留資料損失：有平衡 <b>${VB.toFixed(3)}</b>，沒有平衡 <b>${VN.toFixed(3)}</b>，幾乎一樣。` },
+        { en: `Not at our size. Held-out loss (the loss on the 615 names it never trained on) after 1,500 steps: balanced <b>${VB.toFixed(3)}</b>, unbalanced <b>${VN.toFixed(3)}</b>. Practically the same.`, zh: `在我們的規模下不會。訓練 1,500 步後的驗證損失（在 615 個訓練時從沒看過的名字上的損失）：有平衡 <b>${VB.toFixed(3)}</b>，沒有平衡 <b>${VN.toFixed(3)}</b>，幾乎一樣。` },
         { en: 'Our task is so small that even a lopsided split has enough expert capacity. The real cost of imbalance shows up elsewhere: on the hardware.', zh: '我們的任務太小了，就算分配很偏，專家的能力還是夠用。分配不均真正的代價出現在別的地方：硬體上。' },
       ],
-      changed: [{ sign: '+', text: { en: 'held-out loss, both models', zh: '兩個模型的保留資料損失' } }],
+      changed: [{ sign: '+', text: { en: 'held-out loss, both models', zh: '兩個模型的驗證損失' } }],
     },
     {
       short: { en: 'Hardware', zh: '硬體' }, chapter: 'technique',
@@ -165,8 +177,8 @@ export const moeTraining: Lesson = {
       short: { en: 'Capacity', zh: '容量' }, chapter: 'technique',
       title: { en: 'Capacity: a limit per expert', zh: '容量：每個專家的上限' },
       body: [
-        lz(() => { const c = data().bal.cap[0]; return { en: `To keep each step’s time predictable, each expert gets a fixed <b>capacity</b>: capacity factor × (tokens ÷ experts). With factor 1.0: 1.0 × ${data().tokens} ÷ 4 → <b>${c.cap}</b> tokens.`, zh: `為了讓每一步的時間可以預估，每個專家都有固定的<b>容量（capacity）</b>：容量係數 × （詞元數 ÷ 專家數）。係數 1.0 時：1.0 × ${data().tokens} ÷ 4 → <b>${c.cap}</b> 個詞元。` }; }),
-        lz(() => { const d = data(); return { en: `Tokens beyond the limit <b>overflow</b>: they are dropped from the expert and only pass along the residual connection, unchanged. Here ${d.bal.cap[0].dropped} tokens overflow in the balanced model, ${d.nob.cap[0].dropped} in the unbalanced one (red).`, zh: `超過上限的詞元會<b>溢出（overflow）</b>：它們不進專家，只沿著殘差連線原封不動往下傳。這裡有平衡的模型溢出 ${d.bal.cap[0].dropped} 個詞元，沒平衡的模型溢出 ${d.nob.cap[0].dropped} 個（紅色）。` }; }),
+        lz(() => { const c = data().bal.cap[0]; return { en: `To keep each step’s time predictable, each expert gets a fixed <b>capacity</b>: capacity factor × (tokens ÷ experts). With factor 1.0: 1.0 × ${data().tokens} ÷ 4 → <b>${c.cap}</b> tokens. Tokens beyond it <b>overflow</b>: they skip the expert and only pass along the residual connection, unchanged.`, zh: `為了讓每一步的時間可以預估，每個專家都有固定的<b>容量（capacity）</b>：容量係數 × （詞元數 ÷ 專家數）。係數 1.0 時：1.0 × ${data().tokens} ÷ 4 → <b>${c.cap}</b> 個詞元。超過的詞元會<b>溢出（overflow）</b>：它們跳過專家，只沿著殘差連線原封不動往下傳。` }; }),
+        { en: 'Try it: drag the capacity factor and watch the red overflow in both models. Which tokens are dropped? Simply the ones that arrive after their expert is full: here, the tokens later in the batch. The Switch Transformer does the same; some systems instead keep the tokens the router is most sure about.', zh: '動手試試：拖動容量係數，看看兩個模型的紅色溢出怎麼變。哪些詞元會被丟掉？就是專家已經滿了之後才到的那些：這裡是批次中排在後面的詞元。Switch Transformer 也是這樣做；有些系統則改成保留路由器最有把握的詞元。' },
       ],
       changed: [{ sign: '+', text: { en: 'capacity line (factor 1.0)', zh: '容量線（係數 1.0）' } }, { sign: '+', text: { en: 'overflow in red', zh: '紅色是溢出' } }],
     },
@@ -187,7 +199,7 @@ export const moeTraining: Lesson = {
         { en: 'In <b>expert parallelism</b>, each GPU holds one expert (or a few) and a slice of the batch. After the router decides, every GPU sends each token to the GPU of its expert, and the results are sent back.', zh: '在<b>專家平行（expert parallelism）</b>中，每個 GPU 放一個（或幾個）專家，以及批次的一部分。路由器決定之後，每個 GPU 把每個詞元送到它的專家所在的 GPU，算完再送回來。' },
         { en: 'Because every GPU may send to every other, this exchange is called <b>all-to-all</b>. It happens twice per MoE layer, and on big systems it takes a real share of the time. The routes shown are real; the GPUs are an illustration.', zh: '因為每個 GPU 都可能傳給其他每個 GPU，這種交換叫做 <b>all-to-all（全對全）</b>。每個 MoE 層要做兩次，在大型系統上會佔掉相當多的時間。圖中的路由是真實的，GPU 則是示意。' },
       ],
-      callout: { kind: 'note', text: { en: 'Google’s GShard (2020) trained a 600-billion-parameter translation model this way, with experts spread over 2,048 TPU cores and top-2 routing.', zh: 'Google 的 GShard（2020）就是用這種方式，把專家分散到 2,048 個 TPU 核心上，以 top-2 路由訓練出一個 6,000 億參數的翻譯模型。' } },
+      callout: { kind: 'note', text: { en: 'Google’s GShard (2020) trained a 600-billion-weight translation model this way, with experts spread over 2,048 TPU cores (Google’s AI chips) and top-2 routing.', zh: 'Google 的 GShard（2020）就是用這種方式，把專家分散到 2,048 個 TPU 核心（Google 的 AI 晶片）上，以 top-2 路由訓練出一個 6,000 億個權重的翻譯模型。' } },
       changed: [{ sign: '+', text: { en: '4 GPUs, one expert each (illustration)', zh: '4 個 GPU，各放一個專家（示意）' } }],
     },
     {
@@ -201,7 +213,8 @@ export const moeTraining: Lesson = {
     },
   ],
 
-  scene(step) {
+  scene(step, input = {}) {
+    const cf = cfOf(input.cf);
     const items: Item[] = [];
     const lbl = { bal: t({ en: 'balanced (0.01)', zh: '有平衡（0.01）' }), nob: t({ en: 'no balancing', zh: '沒有平衡' }) };
     const usageBars = (k: string, x: number, u: number[], title: string) => items.push({
@@ -212,7 +225,7 @@ export const moeTraining: Lesson = {
     if (step === 0) {
       usageBars('ubn', 280, last(UN), t({ en: `no balancing · share of tokens per expert`, zh: '沒有平衡 · 每個專家拿到的詞元比例' }));
       items.push({ k: 'ev', t: 'text', x: 450, y: 400, text: t({ en: 'even split would be 25% each', zh: '平均分配的話每個 25%' }), size: 15, anchor: 'middle', tone: 'muted' });
-      items.push({ k: 'evn', t: 'text', x: 450, y: 428, text: t({ en: `measured on ${EX.usageNames} held-out names after ${fmt(EX.steps)} steps`, zh: `訓練 ${fmt(EX.steps)} 步後，用 ${EX.usageNames} 個保留名字測量` }), size: 13, anchor: 'middle', tone: 'muted' });
+      items.push({ k: 'evn', t: 'text', x: 450, y: 428, text: t({ en: `measured on ${EX.usageNames} held-out names after ${fmt(EX.steps)} steps`, zh: `訓練 ${fmt(EX.steps)} 步後，用 ${EX.usageNames} 個驗證集名字測量` }), size: 13, anchor: 'middle', tone: 'muted' });
     }
 
     if (step === 1) {
@@ -239,13 +252,13 @@ export const moeTraining: Lesson = {
       };
       panel('pb', step === 2 ? 360 : 140, d.bal, lbl.bal, 'a');
       if (step === 3) panel('pn', 580, d.nob, lbl.nob, 'bad');
-      items.push({ k: 'bnote', t: 'text', x: 450, y: 450, text: t({ en: `${NB} held-out names, ${d.tokens} tokens · perfectly even = 1.000 · all on one expert = up to 4`, zh: `${NB} 個保留名字，${d.tokens} 個詞元 · 完全平均 = 1.000 · 全給同一個專家最多到 4` }), size: 13, anchor: 'middle', tone: 'muted' });
+      items.push({ k: 'bnote', t: 'text', x: 450, y: 450, text: t({ en: `${NB} held-out names, ${d.tokens} tokens · perfectly even = 1.000 · all on one expert = up to 4`, zh: `${NB} 個驗證集名字，${d.tokens} 個詞元 · 完全平均 = 1.000 · 全給同一個專家最多到 4` }), size: 13, anchor: 'middle', tone: 'muted' });
     }
 
     if (step === 4) {
       items.push({ k: 'vc', t: 'chart', x: 80, y: 60, w: 500, h: 360, ymin: 2.15, ymax: 2.6, xmax: EX.steps, every: EX.experts4.every,
         series: [{ pts: EX.noBalance.val, tone: 'bad' }, { pts: EX.experts4.val, tone: 'a' }],
-        xlabel: t({ en: 'training step', zh: '訓練步數' }), ylabel: t({ en: 'held-out loss (lower is better)', zh: '保留資料損失（越低越好）' }) });
+        xlabel: t({ en: 'training step', zh: '訓練步數' }), ylabel: t({ en: 'held-out loss (lower is better)', zh: '驗證損失（越低越好）' }) });
       items.push({ k: 'unv', t: 'text', x: 740, y: 160, text: VN.toFixed(3), size: 32, bold: true, mono: true, anchor: 'middle', tone: 'bad' });
       items.push({ k: 'unl', t: 'text', x: 740, y: 188, text: lbl.nob, size: 14, anchor: 'middle', tone: 'muted' });
       items.push({ k: 'u4v', t: 'text', x: 740, y: 270, text: VB.toFixed(3), size: 32, bold: true, mono: true, anchor: 'middle', tone: 'a' });
@@ -255,14 +268,17 @@ export const moeTraining: Lesson = {
 
     if (step === 5 || step === 6) {
       const d = data();
-      const base = 420, S = 270 / Math.max(...d.nob.counts, 1);
+      const caps = { b: capAt('bal', cf), n: capAt('nob', cf) };
+      const base = 420, S = 270 / Math.max(...d.nob.counts, step === 6 ? caps.n.cap : 1, 1);
       const groups: [string, Run, string, number][] = [['b', d.bal, lbl.bal, 60], ['n', d.nob, lbl.nob, 490]];
       for (const [g, r, title, gx] of groups) {
         items.push({ k: 'gt' + g, t: 'text', x: gx + 175, y: 40, text: title, size: 15, bold: true, anchor: 'middle', tone: g === 'b' ? 'a' : 'bad' });
-        const cap = r.cap[0].cap;
+        const cap = caps[g as 'b' | 'n'].cap;
         r.counts.forEach((c, e) => {
           const x = gx + e * 90, keep = step === 6 ? Math.min(c, cap) : c;
-          items.push({ k: `g${g}k${e}`, t: 'box', x, y: base - keep * S, w: 70, h: Math.max(4, keep * S), tone: c === Math.max(...r.counts) ? (g === 'b' ? 'a' : 'bad') : 'ink' });
+          // step 6: kept tokens in a neutral tone, only the overflow in red
+          const tone: Tone = step === 6 ? 'ink' : c === Math.max(...r.counts) ? (g === 'b' ? 'a' : 'bad') : 'ink';
+          items.push({ k: `g${g}k${e}`, t: 'box', x, y: base - keep * S, w: 70, h: Math.max(4, keep * S), tone });
           if (step === 6 && c > cap) items.push({ k: `g${g}o${e}`, t: 'box', x, y: base - c * S, w: 70, h: (c - cap) * S - 2, tone: 'bad', active: true });
           const line = step === 6 ? cap : even();
           const near = c < line && (line - c) * S < 18;
@@ -271,17 +287,18 @@ export const moeTraining: Lesson = {
         });
         const ly = base - (step === 6 ? cap : even()) * S;
         items.push({ k: 'gline' + g, t: 'box', x: gx - 10, y: ly - 1, w: 360, h: 3, tone: step === 6 ? 'bad' : 'muted' });
-        items.push({ k: 'gll' + g, t: 'text', x: gx - 8, y: ly - 8, text: step === 6 ? t({ en: `capacity ${cap}`, zh: `容量 ${cap}` }) : t({ en: `even: ${even()}`, zh: `平均：${even()}` }), size: 13, anchor: 'start', tone: step === 6 ? 'bad' : 'muted' });
+        if (step === 5) items.push({ k: 'gll' + g, t: 'text', x: gx - 8, y: ly - 8, text: t({ en: `even: ${even()}`, zh: `平均：${even()}` }), size: 13, anchor: 'start', tone: 'muted' });
       }
       items.push({ k: 'gnote', t: 'text', x: 450, y: 490, text: step === 5
         ? t({ en: `tokens per expert in our batch of ${NB} names · GPUs: illustration`, zh: `我們 ${NB} 個名字的批次中，每個專家的詞元數 · GPU：示意` })
-        : t({ en: `capacity = 1.0 × ${d.tokens} ÷ 4, rounded down · red = overflow, dropped`, zh: `容量 = 1.0 × ${d.tokens} ÷ 4（無條件捨去）· 紅色 = 溢出、被丟掉` }), size: 13, anchor: 'middle', tone: 'muted' });
+        : t({ en: `capacity = ${cf.toFixed(2)} × ${d.tokens} ÷ 4, rounded down · outlined = kept · red = overflow, dropped (the latest arrivals)`, zh: `容量 = ${cf.toFixed(2)} × ${d.tokens} ÷ 4（無條件捨去）· 空心 = 留下 · 紅色 = 溢出、被丟掉（最晚到的詞元）` }), size: 13, anchor: 'middle', tone: 'muted' });
+      if (step === 6) (['b', 'n'] as const).forEach((g, i) => items.push({ k: 'gdrop' + g, t: 'text', x: (i ? 490 : 60) + 175, y: 64, text: t({ en: `capacity ${caps[g].cap} · dropped ${caps[g].dropped} of ${d.tokens} (${pct1(caps[g].dropped / d.tokens)})`, zh: `容量 ${caps[g].cap} · 丟掉 ${d.tokens} 個中的 ${caps[g].dropped} 個（${pct1(caps[g].dropped / d.tokens)}）` }), size: 14, bold: true, anchor: 'middle', tone: caps[g].dropped ? 'bad' : 'good' }));
     }
 
     if (step === 7) {
       const d = data();
       const cx = [70, 270, 400, 600, 730];
-      const head = [t({ en: 'capacity factor', zh: '容量係數' }), t({ en: 'dropped', zh: '丟掉' }), t({ en: 'loss', zh: '損失' }), t({ en: 'dropped', zh: '丟掉' }), t({ en: 'loss', zh: '損失' })];
+      const head = [t({ en: 'capacity factor', zh: '容量係數' }), t({ en: 'dropped', zh: '丟掉' }), t({ en: 'loss on batch', zh: '批次損失' }), t({ en: 'dropped', zh: '丟掉' }), t({ en: 'loss on batch', zh: '批次損失' })];
       items.push({ k: 'thb', t: 'text', x: 335, y: 40, text: lbl.bal, size: 15, bold: true, anchor: 'middle', tone: 'a' });
       items.push({ k: 'thn', t: 'text', x: 665, y: 40, text: lbl.nob, size: 15, bold: true, anchor: 'middle', tone: 'bad' });
       head.forEach((h, j) => items.push({ k: 'th' + j, t: 'text', x: cx[j], y: 72, text: h, size: 13, tone: 'muted', anchor: j ? 'middle' : 'start' }));
@@ -299,7 +316,7 @@ export const moeTraining: Lesson = {
         items.push({ k: 'tnd' + i, t: 'text', x: cx[3], y, text: dropTxt(r.nd), size: 15, mono: true, anchor: 'middle', tone: r.nd ? 'bad' : 'good', bold: true });
         items.push({ k: 'tnl' + i, t: 'text', x: cx[4], y, text: r.nl.toFixed(3), size: 15, mono: true, anchor: 'middle' });
       });
-      items.push({ k: 'tnote', t: 'text', x: 450, y: 370, text: t({ en: `same batch: ${NB} held-out names, ${d.tokens} tokens · loss = prediction loss on this batch`, zh: `同一個批次：${NB} 個保留名字，${d.tokens} 個詞元 · 損失 = 這個批次的預測損失` }), size: 13, anchor: 'middle', tone: 'muted' });
+      items.push({ k: 'tnote', t: 'text', x: 450, y: 370, text: t({ en: `same batch: ${NB} held-out names, ${d.tokens} tokens · loss = prediction loss on this batch`, zh: `同一個批次：${NB} 個驗證集名字，${d.tokens} 個詞元 · 損失 = 這個批次的預測損失` }), size: 13, anchor: 'middle', tone: 'muted' });
       items.push({ k: 'tsw', t: 'box', x: 150, y: 400, w: 600, h: 70, tone: 'b', label: t({ en: 'Switch Transformer: top-1 routing, capacity factor', zh: 'Switch Transformer：top-1 路由，加上容量係數' }), sub: t({ en: 'overflow tokens skip the expert and pass through the residual', zh: '溢出的詞元跳過專家，經由殘差連線傳下去' }) });
     }
 
@@ -344,11 +361,12 @@ export const moeTraining: Lesson = {
       metrics: [
         { label: { en: 'Busiest expert', zh: '最忙的專家' }, value: step >= 1 ? `${Math.max(...last(U4))}% / ${Math.max(...last(UN))}%` : `${Math.max(...last(UN))}%` },
         { label: { en: 'Balance loss', zh: '平衡損失' }, value: d ? (step === 2 ? d.bal.balance.toFixed(3) : `${d.bal.balance.toFixed(2)} / ${d.nob.balance.toFixed(2)}`) : '—' },
-        { label: { en: 'Held-out loss', zh: '保留資料損失' }, value: step >= 4 ? `${VB.toFixed(3)} / ${VN.toFixed(3)}` : '—' },
-        { label: { en: 'Dropped (×1.0)', zh: '丟掉（×1.0）' }, value: d && step >= 6 ? `${d.bal.cap[0].dropped} / ${d.nob.cap[0].dropped}` : '—' },
-        { label: { en: 'Balance weight', zh: '平衡權重' }, value: step >= 1 ? `${ALPHA} / 0` : '0' },
+        { label: { en: 'Held-out loss', zh: '驗證損失' }, value: step >= 4 ? `${VB.toFixed(3)} / ${VN.toFixed(3)}` : '—' },
+        ...(step >= 6 && d ? [{ label: { en: 'Dropped', zh: '丟掉' }, value: step === CAP_STEP ? `${capAt('bal', cf).dropped} / ${capAt('nob', cf).dropped}` : `${d.bal.cap[0].dropped} / ${d.nob.cap[0].dropped}` }] : []),
+        ...(step <= 2 ? [{ label: { en: 'Balance weight', zh: '平衡權重' }, value: step >= 1 ? `${ALPHA} / 0` : '0' }] : []),
       ],
       items,
+      controls: step === CAP_STEP ? [{ key: 'cf', kind: 'slider', label: { en: 'Capacity factor', zh: '容量係數' }, min: 0.5, max: 2.5, step: 0.05, value: 1, format: (v) => v.toFixed(2) }] : undefined,
       legend: step === 0 ? undefined : [
         { tone: 'a', text: { en: 'balanced model (weight 0.01)', zh: '有平衡的模型（權重 0.01）' } },
         { tone: 'bad', text: { en: 'no balancing / overflow', zh: '沒有平衡／溢出' } },
