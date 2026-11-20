@@ -10,6 +10,8 @@ and the larger experiments shown in later lessons are real training runs saved b
 
 Live site: https://anson1234567anson.github.io/new-try-on-codex-/
 
+Starting a similar course? Read [`docs/PLAYBOOK.md`](docs/PLAYBOOK.md): the teaching style, architecture, honesty rules and the write → review → fix process, with the briefs used in [`docs/process/`](docs/process/).
+
 ## Run it
 
 ```bash
